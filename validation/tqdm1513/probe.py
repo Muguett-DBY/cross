@@ -87,8 +87,8 @@ for value in pbar:
     reveal_type(value)
 '''
 text = check("iterable-strict", iterable, flags=("--strict",))
-assert 'Revealed type is "tqdm.std.tqdm[builtins.int]"' in text, text
-assert 'Revealed type is "builtins.int"' in text, text
+assert 'Revealed type is "tqdm.std.tqdm[int]"' in text, text
+assert 'Revealed type is "int"' in text, text
 
 untyped = typed.replace("def producer(no_items: int) -> None:", "def producer(no_items):")
 text = check("untyped-default", untyped)
