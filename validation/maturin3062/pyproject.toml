@@ -1,0 +1,8 @@
+[build-system]
+requires = ["maturin>=1.12,<2"]
+build-backend = "maturin"
+
+[project]
+name = "maturin3062-probe"
+version = "0.1.0"
+requires-python = ">=3.14,<3.15"

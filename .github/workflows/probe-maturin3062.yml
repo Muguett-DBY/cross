@@ -1,0 +1,77 @@
+{
+  "name": "Probe Maturin free-threaded discovery",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/maturin-free-threaded-2026-10-26"
+      ],
+      "paths": [
+        "validation/maturin3062/**",
+        ".github/workflows/probe-maturin3062.yml"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "probe": {
+      "name": "${{ matrix.arch.label }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 20,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "arch": [
+            {
+              "label": "x86_64",
+              "triple": "x86_64-unknown-linux-gnu",
+              "wheelArch": "x86_64"
+            },
+            {
+              "label": "x86",
+              "triple": "i686-unknown-linux-gnu",
+              "wheelArch": "i686"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Compare native discovery with identical exposed interpreters",
+          "uses": "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b",
+          "with": {
+            "maturin-version": "1.12.6",
+            "rust-toolchain": "1.94.0",
+            "target": "${{ matrix.arch.triple }}",
+            "working-directory": "validation/maturin3062",
+            "manylinux": "auto",
+            "sccache": false,
+            "before-script-linux": "export PATH=\"/opt/python/cp314-cp314/bin:/opt/python/cp314-cp314t/bin:$PATH\"\nbash probe.sh \"${{ matrix.arch.triple }}\"",
+            "args": "--release --out explicit-free --interpreter /opt/python/cp314-cp314t/bin/python"
+          }
+        },
+        {
+          "name": "Verify explicit free-threaded wheel and record report",
+          "run": "python3 - <<'PY'\nimport json\nfrom pathlib import Path\np=Path('validation/maturin3062')\nd=json.loads((p/'probe-result.json').read_text())\nw=[x.name for x in (p/'explicit-free').glob('*.whl')]\nassert len(w)==1 and '-cp314t-' in w[0] and w[0].endswith('${{ matrix.arch.wheelArch }}.whl'),w\nd['oldExplicitFreeWheel']=w[0]\n(p/'probe-result.json').write_text(json.dumps(d,indent=2)+'\\n')\nprint('MATURIN3062_FINAL='+json.dumps(d,sort_keys=True))\nPY"
+        },
+        {
+          "name": "Upload probe evidence",
+          "uses": "actions/upload-artifact@v7",
+          "with": {
+            "name": "maturin3062-${{ matrix.arch.label }}",
+            "path": "validation/maturin3062/probe-result.json",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}
