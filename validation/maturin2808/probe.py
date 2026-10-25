@@ -205,12 +205,22 @@ try:
         code, output = run(phase + "-pip-wheel", [python, "-m", "pip", "wheel", "--no-index",
             "--no-build-isolation", "--no-deps", "--wheel-dir", str(wheel_dir), str(archives[0])],
             cwd=WORK, env=install_env, expect=None)
+        isolated_wheel_dir = WORK / ("wheels-isolated-" + phase)
+        isolated_wheel_dir.mkdir(exist_ok=True)
+        isolated_env = env_for("consumer-isolated-" + phase, base_env)
+        isolated_code, isolated_output = run(phase + "-pip-wheel-isolated", [python, "-m", "pip",
+            "wheel", "--no-deps", "--no-cache-dir", "--wheel-dir", str(isolated_wheel_dir),
+            str(archives[0])], cwd=WORK, env=isolated_env, expect=None)
+        assert "Installing build dependencies" in isolated_output
         if not include:
             assert code != 0 and "registry index was not found in any configuration" in output
             assert ALIAS in output
+            assert isolated_code != 0 and "registry index was not found in any configuration" in isolated_output
+            assert ALIAS in isolated_output
         else:
             assert code == 0, output[-7000:]
-            wheels = list(wheel_dir.glob("*.whl"))
+            assert isolated_code == 0, isolated_output[-7000:]
+            wheels = list(isolated_wheel_dir.glob("*.whl"))
             assert len(wheels) == 1
             run("install-fixed-wheel", [python, "-m", "pip", "install", "--no-index", "--no-deps", str(wheels[0])],
                 cwd=WORK, env=install_env)
@@ -221,7 +231,8 @@ try:
     report["allChecksPassed"] = True
     report["configurationValuesPreserved"] = True
     report["originalPrivateRegistryTested"] = False
-    report["wheelBuildIsolationDisabled"] = True
+    report["isolatedWheelBuildVerified"] = True
+    report["wheelBuildModes"] = ["preinstalled-backend", "default-pep517-isolation"]
     report["bindings"] = "bin"
     save()
     print(json.dumps({"allChecksPassed": True, "installedBinaryOutput": report["installedBinaryOutput"],
