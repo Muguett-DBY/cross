@@ -1,0 +1,71 @@
+{
+  "name": "Check Pyright whole-workspace and subset imports",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/pyright-workspace-imports-2026-10-26"
+      ],
+      "paths": [
+        "validation/pyright11109/**",
+        ".github/workflows/probe-pyright11109.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "name": "${{ matrix.os }} / Python 3.12",
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 12,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-24.04",
+            "windows-2025"
+          ]
+        }
+      },
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "uses": "actions/setup-node@v6",
+          "with": {
+            "node-version": "22"
+          }
+        },
+        {
+          "name": "Run typed editable uv-workspace import controls",
+          "run": "python -B -X utf8 validation/pyright11109/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "pyright11109-${{ matrix.os }}",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
