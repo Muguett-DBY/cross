@@ -62,11 +62,18 @@ def functions(text: str) -> dict[str, str]:
     return result
 
 
-def test(name: str, expected_failures: int) -> None:
+def test(
+    name: str,
+    expected_failures: int,
+    *,
+    selectors: list[str] | None = None,
+    expected_tests: int = 6,
+) -> None:
     """Execute the same six real app tests in every phase."""
     xml = OUT / f"{name}.xml"
     args = [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "-q", "-p", "no:cacheprovider",
-            "-c", str(SOURCE / "pyproject.toml"), f"--junitxml={xml}", str(FIXTURES / "test_demo_game.py")]
+            "-c", str(SOURCE / "pyproject.toml"), f"--junitxml={xml}",
+            *(selectors if selectors is not None else [str(FIXTURES / "test_demo_game.py")])]
     result = subprocess.run(args, cwd=SOURCE, env=ENV, capture_output=True,
                             text=True, encoding="utf-8", timeout=180)
     (OUT / f"{name}.log").write_text(result.stdout + result.stderr, encoding="utf-8")
@@ -76,7 +83,7 @@ def test(name: str, expected_failures: int) -> None:
     report["phases"][name] = dict(returncode=result.returncode, **counts)
     save()
     print(json.dumps({"phase": name, **report["phases"][name]}), flush=True)
-    assert counts == {"tests": 6, "failures": expected_failures, "errors": 0, "skipped": 0}
+    assert counts == {"tests": expected_tests, "failures": expected_failures, "errors": 0, "skipped": 0}
     assert result.returncode == (1 if expected_failures else 0)
 
 
@@ -101,9 +108,16 @@ installation = command([sys.executable, "-m", "pip", "install", "-e", "."])
 report["originalHeadPackage"] = package_identity()
 assert functions(GAME.read_text(encoding="utf-8")) == META["proposedFunctionHashes"]
 test("original-pr-head", 0)
+contribution = SOURCE / "tests/test_demo_game.py"
+assert not contribution.exists()
+contribution.write_bytes((FIXTURES / "test_demo_game.py").read_bytes())
+test("original-pr-in-tree", 0,
+     selectors=["tests/test_demo_game.py", "tests/test_demo.py"], expected_tests=7)
+report["readyContributionPath"] = "tests/test_demo_game.py"
 style = command([sys.executable, "-m", "black", "--check", "--diff", str(FIXTURES / "test_demo_game.py")])
 (OUT / "black.log").write_text(style.stdout + style.stderr, encoding="utf-8")
 report["allChecksPassed"] = True
 report["testFileSha256"] = hashlib.sha256((FIXTURES / "test_demo_game.py").read_bytes()).hexdigest()
+assert contribution.read_bytes() == (FIXTURES / "test_demo_game.py").read_bytes()
 save()
 print(json.dumps({"allChecksPassed": True, "phases": report["phases"]}), flush=True)
