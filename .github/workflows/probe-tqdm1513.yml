@@ -1,0 +1,55 @@
+{
+  "name": "Verify tqdm type inference",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/tqdm-inference-2026-10-26"
+      ],
+      "paths": [
+        "validation/tqdm1513/**",
+        ".github/workflows/probe-tqdm1513.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 8,
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Check published stubs, checked code and untyped function controls",
+          "run": "python -B -X utf8 validation/tqdm1513/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "tqdm1513-controls",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
