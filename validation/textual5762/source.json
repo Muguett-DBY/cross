@@ -1,0 +1,13 @@
+{
+  "main": "5e5b7ef58b8c5572c13a3ff9027d756623661495",
+  "head": "9c9f7f7e8b3c7601c0c8e3bf460b17d837bb5c2e",
+  "originalAuthor": "Janzert",
+  "upstreamPR": "https://github.com/Textualize/textual/pull/5762",
+  "requestedTests": "https://github.com/Textualize/textual/issues/6294#issuecomment-3686507485",
+  "proposedFunctionHashes": {
+    "Tile.on_mount": "ebf2a9198f3e5faaa8be405dd164113f17936d20a210a408e62dcaeca95ac9ed",
+    "Game.compose": "1c27e8295cbc2dfcb00391dafa4d7afe75ac6e97ebe9380bf963f12ccf5dee39"
+  },
+  "patchLicense": "MIT",
+  "scope": "Six tests cover both puzzle fixes; no full Textual suite claim."
+}
