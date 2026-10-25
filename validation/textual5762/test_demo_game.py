@@ -28,6 +28,8 @@ async def test_moved_tile_mount_keeps_original_content(
     picture = "\n".join("012345678901234567890123" for _ in range(9))
 
     class TileApp(App):
+        """Keep one tile mounted in a fixed-size picture grid."""
+
         def compose(self) -> ComposeResult:
             """Mount a tile that moved before its mount handler ran."""
             with containers.HorizontalGroup() as grid:
@@ -50,6 +52,8 @@ async def test_recompose_after_move_resets_the_puzzle(side: int) -> None:
     """Starting a new game must restore tile identities and the blank corner."""
 
     class GameApp(App):
+        """Host the puzzle without the surrounding demo screen."""
+
         def compose(self) -> ComposeResult:
             """Mount the game without starting its random shuffle worker."""
             game = Game(
