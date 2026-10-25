@@ -49,13 +49,13 @@ def put(path: Path, contents: str) -> None:
     path.write_text(contents, encoding="utf-8")
 
 
-def check(name: str, targets: list[str], expected: int) -> dict:
+def check(name: str, targets: list[str], expected: int, *, version: str, entry: Path) -> dict:
     """Verify real CLI diagnostics without suppressing the privacy rule."""
-    result = run(name, ["node", str(PYRIGHT), "--outputjson", *targets], expect=None)
+    result = run(name, ["node", str(entry), "--outputjson", *targets], expect=None)
     actual = json.loads(result.stdout)
     report["checks"][name] = actual
     save()
-    assert actual["version"] == "1.1.414"
+    assert actual["version"] == version
     assert actual["summary"]["errorCount"] == expected, actual
     assert actual["summary"]["warningCount"] == 0
     assert result.returncode == (1 if expected else 0)
@@ -68,11 +68,13 @@ def check(name: str, targets: list[str], expected: int) -> dict:
 
 
 node_tools = WORK / "node-tools"
-put(node_tools / "package.json", json.dumps({"private": True, "devDependencies": {"pyright": "1.1.414"}}))
+put(node_tools / "package.json", json.dumps({"private": True, "devDependencies": {
+    "pyright": "1.1.414", "pyright-legacy": "npm:pyright@1.1.407"}}))
 npm = "npm.cmd" if os.name == "nt" else "npm"
-run("install-pyright", [npm, "install", "--prefix", str(node_tools), "--ignore-scripts", "--no-audit", "--no-fund"], cwd=WORK)
-PYRIGHT = node_tools / "node_modules/pyright/index.js"
-assert PYRIGHT.is_file()
+run("install-pyright", [npm, "install", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=node_tools)
+CHECKERS = {"1.1.407": node_tools / "node_modules/pyright-legacy/index.js",
+            "1.1.414": node_tools / "node_modules/pyright/index.js"}
+assert all(path.is_file() for path in CHECKERS.values())
 tools = WORK / "tools"
 venv.EnvBuilder(with_pip=True).create(tools)
 tool_python = tools / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -122,20 +124,24 @@ runtime = run("runtime-import", [str(python), "-c",
     "assert isinstance(packageC.moo.value, packageB.bar.myclass); "
     "print(json.dumps({'runtimeImportWorks':True, 'packageBFile':packageB.bar.__file__}))"])
 report["runtime"] = json.loads(runtime.stdout)
-check("implicit-export-whole-workspace", [], 0)
-check("implicit-export-subset", ["packages/packageC"], 1)
+for version, entry in CHECKERS.items():
+    put(BAR, "from packageA.foo import myclass\n")
+    check(version + "-implicit-export-whole-workspace", [], 0 if version == "1.1.407" else 1,
+          version=version, entry=entry)
+    check(version + "-implicit-export-subset", ["packages/packageC"], 1, version=version, entry=entry)
 
-put(BAR, "from packageA.foo import myclass as myclass\n")
-check("redundant-alias-whole-workspace", [], 0)
-check("redundant-alias-subset", ["packages/packageC"], 0)
+    put(BAR, "from packageA.foo import myclass as myclass\n")
+    check(version + "-redundant-alias-whole-workspace", [], 0, version=version, entry=entry)
+    check(version + "-redundant-alias-subset", ["packages/packageC"], 0, version=version, entry=entry)
 
-put(BAR, 'from packageA.foo import myclass\n\n__all__ = ["myclass"]\n')
-check("explicit-all-whole-workspace", [], 0)
-check("explicit-all-subset", ["packages/packageC"], 0)
+    put(BAR, 'from packageA.foo import myclass\n\n__all__ = ["myclass"]\n')
+    check(version + "-explicit-all-whole-workspace", [], 0, version=version, entry=entry)
+    check(version + "-explicit-all-subset", ["packages/packageC"], 0, version=version, entry=entry)
 report["configuration"] = configuration
 report["allChecksPassed"] = True
 report["originalPrivateWorkspaceTested"] = False
-report["scope"] = "Actual uv workspace with three editable typed src-layout packages; one released Pyright version."
+report["scope"] = "Actual uv workspace with three editable typed src-layout packages; Pyright 1.1.407 and 1.1.414."
+report["reporterVersionKnown"] = False
 save()
 print(json.dumps({"allChecksPassed": True,
     "counts": {name: value["summary"]["errorCount"] for name, value in report["checks"].items()}}))
