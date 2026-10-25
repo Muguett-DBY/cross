@@ -8,6 +8,7 @@ import os
 import platform
 import subprocess
 import sys
+import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -43,9 +44,10 @@ def command(args: list[str]) -> subprocess.CompletedProcess:
 def package_identity() -> dict:
     """Confirm pytest will import the editable source rather than another wheel."""
     code = (
-        "import json, textual; from pathlib import Path; "
+        "import json, textual; from pathlib import Path; from importlib.metadata import version; "
         "assert Path(textual.__file__).resolve() == Path('src/textual/__init__.py').resolve(); "
-        "print(json.dumps({'file': textual.__file__, 'version': textual.__version__}))"
+        "print(json.dumps({'file': textual.__file__, 'version': textual.__version__, "
+        "'dependencies': {name: version(name) for name in ('rich', 'pytest', 'pytest-asyncio', 'pygments')}}))"
     )
     return json.loads(command([sys.executable, "-B", "-X", "utf8", "-c", code]).stdout)
 
@@ -68,8 +70,9 @@ def test(
     *,
     selectors: list[str] | None = None,
     expected_tests: int = 6,
+    expected_failure_text: str | None = None,
 ) -> None:
-    """Execute the same six real app tests in every phase."""
+    """Run the selected regressions or an unchanged upstream smoke test."""
     xml = OUT / f"{name}.xml"
     args = [sys.executable, "-B", "-X", "utf8", "-m", "pytest", "-q", "-p", "no:cacheprovider",
             "-c", str(SOURCE / "pyproject.toml"), f"--junitxml={xml}",
@@ -85,6 +88,10 @@ def test(
     print(json.dumps({"phase": name, **report["phases"][name]}), flush=True)
     assert counts == {"tests": expected_tests, "failures": expected_failures, "errors": 0, "skipped": 0}
     assert result.returncode == (1 if expected_failures else 0)
+    if expected_failure_text is not None:
+        failures = list(ET.parse(xml).getroot().iter("failure"))
+        assert len(failures) == expected_failures
+        assert all(expected_failure_text in (failure.text or "") for failure in failures)
 
 
 assert command(["git", "rev-parse", "HEAD"]).stdout.strip() == META["main"]
@@ -107,6 +114,20 @@ installation = command([sys.executable, "-m", "pip", "install", "-e", "."])
 (OUT / "original-head-install.log").write_text(installation.stdout + installation.stderr, encoding="utf-8")
 report["originalHeadPackage"] = package_identity()
 assert functions(GAME.read_text(encoding="utf-8")) == META["proposedFunctionHashes"]
+assert not (SOURCE / "tests/test_demo_game.py").exists()
+smoke_original = (SOURCE / "tests/test_demo.py").read_bytes()
+test("original-head-unpinned-demo", 1, selectors=["tests/test_demo.py"],
+     expected_tests=1, expected_failure_text="bad marshal data")
+locked = tomllib.loads((SOURCE / "poetry.lock").read_text(encoding="utf-8"))
+locked_rich = next(package["version"] for package in locked["package"] if package["name"] == "rich")
+assert locked_rich == "13.9.4"
+installation = command([sys.executable, "-m", "pip", "install", f"rich=={locked_rich}"])
+(OUT / "original-head-locked-rich-install.log").write_text(
+    installation.stdout + installation.stderr, encoding="utf-8"
+)
+report["originalHeadLockedRichPackage"] = package_identity()
+assert report["originalHeadLockedRichPackage"]["dependencies"]["rich"] == locked_rich
+assert (SOURCE / "tests/test_demo.py").read_bytes() == smoke_original
 test("original-pr-head", 0)
 contribution = SOURCE / "tests/test_demo_game.py"
 assert not contribution.exists()
