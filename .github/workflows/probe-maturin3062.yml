@@ -60,14 +60,14 @@
         },
         {
           "name": "Verify explicit free-threaded wheel and record report",
-          "run": "python3 - <<'PY'\nimport json\nfrom pathlib import Path\np=Path('validation/maturin3062')\nd=json.loads((p/'probe-result.json').read_text())\nw=[x.name for x in (p/'explicit-free').glob('*.whl')]\nassert len(w)==1 and '-cp314t-' in w[0] and w[0].endswith('${{ matrix.arch.wheelArch }}.whl'),w\nd['oldExplicitFreeWheel']=w[0]\n(p/'probe-result.json').write_text(json.dumps(d,indent=2)+'\\n')\nprint('MATURIN3062_FINAL='+json.dumps(d,sort_keys=True))\nPY"
+          "run": "python3 - <<'PY'\nimport json\nimport os\nfrom pathlib import Path\np=Path('validation/maturin3062')\nd=json.loads((p/'probe-result.json').read_text())\nw=[x.name for x in (p/'explicit-free').glob('*.whl')]\nassert len(w)==1 and '-cp314t-' in w[0] and w[0].endswith('${{ matrix.arch.wheelArch }}.whl'),w\nd['oldExplicitFreeWheel']=w[0]\nreport=Path(os.environ['RUNNER_TEMP'])/'maturin3062-${{ matrix.arch.label }}.json'\nreport.write_text(json.dumps(d,indent=2)+'\\n')\nprint('MATURIN3062_FINAL='+json.dumps(d,sort_keys=True))\nPY"
         },
         {
           "name": "Upload probe evidence",
           "uses": "actions/upload-artifact@v7",
           "with": {
             "name": "maturin3062-${{ matrix.arch.label }}",
-            "path": "validation/maturin3062/probe-result.json",
+            "path": "${{ runner.temp }}/maturin3062-${{ matrix.arch.label }}.json",
             "retention-days": 7
           }
         }
