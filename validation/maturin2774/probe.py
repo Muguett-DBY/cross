@@ -125,6 +125,7 @@ put(PROJECT / "Cargo.toml", '''[package]
 name = "custard-maturin-fixture-project"
 version = "1.0.0"
 edition = "2021"
+[workspace]
 [lib]
 name = "_native"
 crate-type = ["cdylib"]
