@@ -102,8 +102,8 @@ for label, index in [("negative", -1), ("reverse", slice(None, None, -1)),
     assert source.align["name"] == "l"
     assert source.attributes == {"class": "original"}
     assert source.fields == ["name", "count"]
-    # Clear the old explicit selection before changing the column names.
-    subset.fields = None
+    # An empty selection displays all columns without retaining the old names.
+    subset.fields = []
     subset.field_names = ["renamed", "count"]
     assert source.get_string() == expected
     subset.get_string()
@@ -111,7 +111,14 @@ for label, index in [("negative", -1), ("reverse", slice(None, None, -1)),
 print(json.dumps({"packageFile": prettytable.__file__, "version": prettytable.__version__, "cases": results}))
 '''
 result = subprocess.run([sys.executable, "-B", "-X", "utf8", "-c", extra], cwd=SOURCE,
-                        env=ENV, capture_output=True, text=True, encoding="utf-8", check=True)
+                        env=ENV, capture_output=True, text=True, encoding="utf-8")
+(OUT / "extra-index-forms.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+if result.returncode:
+    report["extraIndexFormsError"] = result.stderr
+    report["allChecksPassed"] = False
+    (OUT / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(result.stderr, flush=True)
+    raise AssertionError("The additional index-form checks failed; inspect extra-index-forms.log")
 report["extraIndexForms"] = json.loads(result.stdout)
 assert implementation.read_bytes() == original
 report["sourceRestoredExactly"] = True
