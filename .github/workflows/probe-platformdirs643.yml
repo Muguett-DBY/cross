@@ -1,0 +1,76 @@
+{
+  "name": "Verify platformdirs isolation roots",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/platformdirs-relative-root-2026-10-26"
+      ],
+      "paths": [
+        "validation/platformdirs643/**",
+        ".github/workflows/probe-platformdirs643.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "name": "${{ matrix.os }} / Python 3.12",
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-24.04",
+            "windows-2025",
+            "macos-15"
+          ]
+        }
+      },
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "repository": "tox-dev/platformdirs",
+            "ref": "411d04d238e91b8513a07806a557e4a4fcea09a8",
+            "path": "source",
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Verify original module, full PR suite and independent boundaries",
+          "run": "python -B -X utf8 validation/platformdirs643/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "platformdirs643-${{ matrix.os }}",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
