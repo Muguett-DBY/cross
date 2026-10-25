@@ -36,7 +36,10 @@ def run(name: str, args: list[str], *, cwd=PROJECT, env=None, expect=0):
     output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
     output = "".join(c for c in output if c in "\n\r\t" or ord(c) >= 32)
     (OUT / f"{name}.log").write_text(output, encoding="utf-8")
-    report["commands"][name] = {"args": args, "returncode": result.returncode}
+    report["commands"][name] = {
+        "args": args, "returncode": result.returncode,
+        "pythonIndexesDisabled": bool(env and env.get("PIP_NO_INDEX") == "1" and env.get("UV_NO_INDEX") == "1"),
+    }
     save()
     if expect is not None:
         assert result.returncode == expect, (name, result.returncode, output[-5000:])
@@ -111,6 +114,14 @@ def check_import(kind: str, python: str, env: dict) -> None:
     save()
 
 
+def build_env(env: dict) -> dict:
+    """Allow normal isolated build-backend downloads for the explicit local path."""
+    result = env.copy()
+    result.pop("PIP_NO_INDEX", None)
+    result.pop("UV_NO_INDEX", None)
+    return result
+
+
 put(DEP / "pyproject.toml", f'''[build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -157,7 +168,7 @@ report["uvSourcesAloneWorks"] = code == 0
 if code:
     assert NAME in output and ("No solution found" in output or "not found" in output), output[-5000:]
 run("uv-install-sibling", [uv_python, "-m", "uv", "pip", "install", "--python", uv_python,
-    "--no-build-isolation", "-e", "../dep"], env=uv_env)
+    "-e", "../dep"], env=build_env(uv_env))
 run("uv-develop-after-sibling", [uv_python, "-m", "maturin", "develop", "--uv"], env=uv_env)
 check_import("uv", uv_python, uv_env)
 
@@ -166,12 +177,13 @@ pip_python, pip_env = make_env("pip")
 code, output = run("pip-before-sibling", [pip_python, "-m", "maturin", "develop"], env=pip_env, expect=None)
 assert code != 0 and NAME in output and "No matching distribution" in output, output[-5000:]
 run("pip-install-sibling", [pip_python, "-m", "pip", "install",
-    "--no-build-isolation", "-e", "../dep"], env=pip_env)
+    "-e", "../dep"], env=build_env(pip_env))
 run("pip-develop-after-sibling", [pip_python, "-m", "maturin", "develop"], env=pip_env)
 check_import("pip", pip_python, pip_env)
 report["fixtureHashes"] = {str(path.relative_to(WORK)): hashlib.sha256(path.read_bytes()).hexdigest()
     for path in [DEP / "pyproject.toml", PROJECT / "Cargo.toml", PROJECT / "src/lib.rs"]}
 report["allRecommendedStepsPassed"] = True
+report["defaultBuildIsolationUsedForSiblingInstall"] = True
 report["hatchEnvironmentLifecycleTested"] = False
 save()
 print(json.dumps({"uvSourcesAloneWorks": report["uvSourcesAloneWorks"],
