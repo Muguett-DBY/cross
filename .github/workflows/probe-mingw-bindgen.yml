@@ -1,0 +1,102 @@
+name: MinGW bindgen header probe
+
+on:
+  push:
+    branches: [probe/mingw-bindgen-2026-10-25]
+    paths: [.github/workflows/probe-mingw-bindgen.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CARGO_TERM_COLOR: never
+      PROBE_TARGET: x86_64-pc-windows-gnu
+    steps:
+      - name: Prepare the exact reported image and bindgen versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cross-bin" "$RUNNER_TEMP/cross-bindgen-probe/src"
+          curl --fail --location --retry 2 https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/cross.tar.gz"
+          tar -xzf "$RUNNER_TEMP/cross.tar.gz" -C "$RUNNER_TEMP/cross-bin"
+          echo "$RUNNER_TEMP/cross-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/cross-bin/cross" --version
+          rustc --version
+          rustup target add "$PROBE_TARGET"
+          cd "$RUNNER_TEMP/cross-bindgen-probe"
+          cat > Cargo.toml <<'TOML'
+          [package]
+          name = "cross-bindgen-malloc-probe"
+          version = "0.0.0"
+          edition = "2021"
+
+          [build-dependencies]
+          bindgen = "=0.72.1"
+          clang-sys = "=1.9.1"
+          TOML
+          cat > build.rs <<'RUST'
+          fn main() {
+              println!("cargo:rerun-if-changed=wrapper.h");
+              let bindings = bindgen::Builder::default()
+                  .header("wrapper.h")
+                  .generate()
+                  .expect("header probe must generate bindings");
+              let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+              bindings.write_to_file(out.join("bindings.rs")).unwrap();
+          }
+          RUST
+          echo 'fn main() {}' > src/main.rs
+          printf '#include <stdlib.h>\n#include <malloc.h>\n' > wrapper.h
+          cat > Cross.toml <<'TOML'
+          [build.env]
+          passthrough = ["BINDGEN_EXTRA_CLANG_ARGS"]
+
+          [target.x86_64-pc-windows-gnu]
+          image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu@sha256:33f098dcb4f9b036faaf9a3afabc7f24c8edb2e8501f34bccff65b90031c85f9"
+          pre-build = [
+            "apt-get update",
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --no-install-suggests libc6-dev-amd64-cross musl-tools git cmake make perl pkg-config libclang-dev nasm",
+          ]
+          TOML
+          cat Cross.toml
+
+      - name: Require the baseline to fail on mm_malloc.h
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cross-bindgen-probe"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=$PROBE_TARGET"
+          set +e
+          cross check --target "$PROBE_TARGET" 2>&1 | tee "$RUNNER_TEMP/baseline.log"
+          result=${PIPESTATUS[0]}
+          set -e
+          if [ "$result" -eq 0 ]; then
+            echo "Baseline unexpectedly passed; the proposed reproduction is not valid."
+            exit 1
+          fi
+          grep -F "fatal error: 'mm_malloc.h' file not found" "$RUNNER_TEMP/baseline.log"
+
+      - name: Add only clang and require the same header probe to pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cross-bindgen-probe"
+          sed -i 's/pkg-config libclang-dev nasm/pkg-config clang libclang-dev nasm/' Cross.toml
+          cat Cross.toml
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=$PROBE_TARGET"
+          cross check --target "$PROBE_TARGET" 2>&1 | tee "$RUNNER_TEMP/with-clang.log"
+
+      - name: Check the reported btls-sys version with clang installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cross-bindgen-probe"
+          printf '\n[dependencies]\nbtls-sys = "=0.5.6"\n' >> Cargo.toml
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=$PROBE_TARGET"
+          cross check --target "$PROBE_TARGET" 2>&1 | tee "$RUNNER_TEMP/btls-with-clang.log"
+          printf 'Verified the minimal header failure and a clang-only workaround on the exact reported cross image. btls-sys 0.5.6 also passed cross check. Full Redlib was not built.\n' >> "$GITHUB_STEP_SUMMARY"
