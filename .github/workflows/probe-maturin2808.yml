@@ -1,0 +1,65 @@
+{
+  "name": "Check nested Maturin sdist registry configuration",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/maturin-registry-sdist-2026-10-26"
+      ],
+      "paths": [
+        "validation/maturin2808/**",
+        ".github/workflows/probe-maturin2808.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "name": "${{ matrix.os }} / Python 3.12",
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-24.04",
+            "windows-2025"
+          ]
+        }
+      },
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Verify archive layout, clean Cargo consumers and installed binary",
+          "run": "python -B -X utf8 validation/maturin2808/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "maturin2808-${{ matrix.os }}",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
