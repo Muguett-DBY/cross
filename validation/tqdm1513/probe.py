@@ -92,7 +92,7 @@ assert 'Revealed type is "int"' in text, text
 
 untyped = typed.replace("def producer(no_items: int) -> None:", "def producer(no_items):")
 text = check("untyped-default", untyped)
-assert 'Revealed type is "Any"' in text and "[annotation-unchecked]" in text, text
+assert 'Revealed type is "Any"' in text and "unchecked functions" in text, text
 text = check("untyped-checked", untyped, flags=("--check-untyped-defs",))
 assert 'Revealed type is "tqdm.std.tqdm[Never]"' in text, text
 text = check("untyped-invalid-default", untyped.replace("pbar.update(1)", 'pbar.update("wrong")'))
