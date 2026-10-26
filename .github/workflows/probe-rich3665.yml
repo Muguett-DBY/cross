@@ -1,0 +1,55 @@
+{
+  "name": "Verify Rich progress column allocation",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/rich-progress-layout-2026-10-26"
+      ],
+      "paths": [
+        "validation/rich3665/**",
+        ".github/workflows/probe-rich3665.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 6,
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Render exact snippet across widths and releases with negative controls",
+          "run": "python -B -X utf8 validation/rich3665/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "rich3665-progress-layout",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
