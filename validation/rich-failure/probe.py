@@ -34,7 +34,7 @@ def check_version():
         mode = "terminal" if terminal else "plain"
         stream = io.StringIO()
         clock = [100.0]
-        console = Console(file=stream, force_terminal=terminal, color_system="standard", width=100)
+        console = Console(file=stream, force_terminal=terminal, color_system="standard" if terminal else None, width=100)
         finished_text = "[green]✓" if terminal else "-"
         spinner = outcome(finished_text=finished_text)
         progress = Progress(
@@ -99,7 +99,7 @@ def check_version():
         if terminal:
             assert "\x1b[31mx\x1b[0m" in first_capture, repr(first_capture)
         else:
-            assert "\x1b" not in first_capture
+            assert "\x1b" not in first_capture, repr(first_capture)
         cases.append(mode + ":red marker in color mode and readable plain output")
 
         # Negative controls: an ordinary column ignores the per-task field, and
