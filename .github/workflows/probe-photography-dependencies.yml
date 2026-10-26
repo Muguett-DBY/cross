@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind: [runtime, tooling]
+        kind: [tooling]
     name: photography-${{ matrix.kind }}
     steps:
       - uses: actions/checkout@v7

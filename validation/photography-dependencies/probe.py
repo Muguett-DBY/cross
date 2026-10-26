@@ -39,13 +39,17 @@ else:
     run("baseline-bundle",["npm","run","bundle:analyze"])
     manifest=SRC/"dist/.vite/manifest.json"
     (OUT/"baseline-manifest.json").write_bytes(manifest.read_bytes())
-    config=SRC/"vite.config.ts"; text=config.read_text()
-    start=text.index('            {\n              name: "icon-vendor",')
-    end=text.index('            {\n              name: "immersive-vendor",',start)
-    block=text[start:end]; assert block.count('name:')==1 and 'lucide-react' in block
-    config.write_text(text[:start]+text[end:],encoding="utf-8")
-    report["changeRationale"]="Let the bundler share and split Lucide modules by usage instead of loading every site's used icons through one global vendor chunk. Page budgets are unchanged."
-    patch_paths=["vite.config.ts"]
+    patch_paths=[]
+config=SRC/"vite.config.ts"; text=config.read_text()
+start=text.index('            {\n              name: "icon-vendor",')
+end=text.index('            {\n              name: "immersive-vendor",',start)
+block=text[start:end]; assert block.count('name:')==1 and 'lucide-react' in block
+config.write_text(text[:start]+text[end:],encoding="utf-8")
+report["changeRationale"]="Let the bundler share and split Lucide modules by usage instead of loading every site's used icons through one global vendor chunk. Page budgets are unchanged."
+patch_paths.append("vite.config.ts")
+report["budgetScriptSha256"]=hashlib.sha256((SRC/"scripts/check-route-budgets.mjs").read_bytes()).hexdigest()
+for path in patch_paths:
+    output=OUT/"source"/path;output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes((SRC/path).read_bytes())
 run("migrations",["npm","run","db:migrate:check"])
 run("types-final",["npm","run","cf:types:check"])
 run("lint",["npm","run","lint"])
