@@ -1,0 +1,45 @@
+name: Verify synchronized AnyIO rollover tests
+on:
+  push:
+    branches: [probe/anyio-rollover-sync-2026-10-27]
+    paths:
+      - .github/workflows/probe-anyio-rollover.yml
+      - validation/anyio-rollover/**
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-cpython312
+            os: ubuntu-24.04
+            python: '3.12'
+            mode: runtime
+          - name: windows-cpython312
+            os: windows-latest
+            python: '3.12'
+            mode: runtime
+          - name: linux-precommit314
+            os: ubuntu-24.04
+            python: '3.14'
+            mode: precommit
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -B validation/anyio-rollover/probe.py ${{ matrix.mode }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anyio-rollover-${{ matrix.name }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7
