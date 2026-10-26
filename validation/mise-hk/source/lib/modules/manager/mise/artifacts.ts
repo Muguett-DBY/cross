@@ -169,13 +169,12 @@ export async function updateArtifacts({
   const allowlist = GlobalConfig.get('allowedUnsafeExecutions');
   const miseAllowlisted = allowlist.includes('mise');
 
-  const selectedTools = updatedDeps.flatMap(
-    ({ depName, newVersion }) =>
-      !config.isLockFileMaintenance &&
-      isNonEmptyStringAndNotWhitespace(depName) &&
-      isNonEmptyStringAndNotWhitespace(newVersion)
-        ? [quote(`${depName}@${newVersion}`)]
-        : [],
+  const selectedTools = updatedDeps.flatMap(({ depName, newVersion }) =>
+    !config.isLockFileMaintenance &&
+    isNonEmptyStringAndNotWhitespace(depName) &&
+    isNonEmptyStringAndNotWhitespace(newVersion)
+      ? [quote(`${depName}@${newVersion}`)]
+      : [],
   );
 
   // The mise version is needed to decide safe mode (untrusted path) and
@@ -183,7 +182,11 @@ export async function updateArtifacts({
   // the probe for allowlisted updates that do not need either feature.
   const miseConstraint = await resolveToolConstraint(config, 'mise');
   let miseSupportsSafeFeatures = false;
-  if (!miseAllowlisted || config.isLockFileMaintenance || selectedTools.length) {
+  if (
+    !miseAllowlisted ||
+    config.isLockFileMaintenance ||
+    selectedTools.length
+  ) {
     const miseVersion = await detectMiseVersion({
       cwdFile: packageFileName,
       toolConstraints: [{ toolName: 'mise', constraint: miseConstraint }],
@@ -204,7 +207,8 @@ export async function updateArtifacts({
   const { isLocal, env } = getConfigType(packageFileName);
   const localFlag = isLocal ? ' --local' : '';
 
-  const regenerateSelected = miseSupportsSafeFeatures && selectedTools.length > 0;
+  const regenerateSelected =
+    miseSupportsSafeFeatures && selectedTools.length > 0;
   let lockCmd: string | undefined;
   if (config.isLockFileMaintenance) {
     // Lock file maintenance means "update to the latest versions". Plain

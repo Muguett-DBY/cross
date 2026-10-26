@@ -128,11 +128,14 @@ export function rebindUpdatedToolSelectors(
     return content;
   }
   const parsed = MiseLockFile.parse(content);
-  const changes = new Map<
-    number,
-    { end: number; specifiers: string[] }
-  >();
-  for (const { depName: name, newVersion: version, newValue, currentValue, currentVersion } of updates) {
+  const changes = new Map<number, { end: number; specifiers: string[] }>();
+  for (const {
+    depName: name,
+    newVersion: version,
+    newValue,
+    currentValue,
+    currentVersion,
+  } of updates) {
     const entries = lockfile.getLockedTool(parsed, name);
     if (!entries) {
       throw new Error(`No regenerated mise lock entry for ${name}`);
@@ -147,10 +150,12 @@ export function rebindUpdatedToolSelectors(
     }
     const targets = entries.filter(
       (entry) =>
-        entry.specifiers?.includes(version) || entry.version === version,
+        (entry.specifiers ?? []).includes(version) || entry.version === version,
     );
     if (targets.length !== 1) {
-      throw new Error(`Ambiguous regenerated mise lock entry for ${name}@${version}`);
+      throw new Error(
+        `Ambiguous regenerated mise lock entry for ${name}@${version}`,
+      );
     }
     const entry = targets[0];
     if (!entry.specifiers) {
@@ -163,19 +168,23 @@ export function rebindUpdatedToolSelectors(
     ) {
       throw new Error(`Conflicting mise lock selector for ${name}@${selector}`);
     }
-    const table = astTableForTool(content, getToolName(name, parsed), entries.indexOf(entry));
+    const table = astTableForTool(
+      content,
+      getToolName(name, parsed),
+      entries.indexOf(entry),
+    );
     const value = table?.body.find(
       ({ key }) => getVersionKeyValue(key) === 'specifiers',
     )?.value;
     if (!value) {
       throw new Error(`Unsupported mise selector binding for ${name}`);
     }
-    const previous = changes.get(value.range[0])?.specifiers ?? entry.specifiers;
+    const previous =
+      changes.get(value.range[0])?.specifiers ?? entry.specifiers;
     const replaced = new Set([version, currentVersion, currentValue]);
-    const specifiers = [...new Set([
-      ...previous.filter((item) => !replaced.has(item)),
-      selector,
-    ])];
+    const specifiers = [
+      ...new Set([...previous.filter((item) => !replaced.has(item)), selector]),
+    ];
     if (
       specifiers.length !== previous.length ||
       specifiers.some((item, index) => item !== previous[index])
@@ -183,12 +192,13 @@ export function rebindUpdatedToolSelectors(
       changes.set(value.range[0], { end: value.range[1], specifiers });
     }
   }
+  let updatedContent = content;
   for (const [start, { end, specifiers }] of [...changes].sort(
     ([left], [right]) => right - left,
   )) {
-    content = `${content.slice(0, start)}${safeStringify(specifiers)}${content.slice(end)}`;
+    updatedContent = `${updatedContent.slice(0, start)}${safeStringify(specifiers)}${updatedContent.slice(end)}`;
   }
-  return content;
+  return updatedContent;
 }
 
 export function updateLockedDependency(

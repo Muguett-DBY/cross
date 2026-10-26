@@ -1,7 +1,13 @@
+import { isString } from '@sindresorhus/is';
 import { codeBlock } from 'common-tags';
 import upath from 'upath';
 import { mockDeep } from 'vitest-mock-extended';
-import { envMock, exec, mockExecAll, mockExecSequence } from '~test/exec-util.ts';
+import {
+  envMock,
+  exec,
+  mockExecAll,
+  mockExecSequence,
+} from '~test/exec-util.ts';
 import { env, fs, git, hostRules, partial } from '~test/util.ts';
 import { GlobalConfig } from '../../../config/global.ts';
 import type {
@@ -388,10 +394,12 @@ describe('modules/manager/mise/artifacts', () => {
     );
 
     it('regenerates all selected tools in a mixed local-environment update', async () => {
-      fs.readLocalFile.mockResolvedValue(originalLock);
+      fs.readLocalFile.mockResolvedValue(
+        `${originalLock}\n[[tools.node]]\nversion = "24.16.0"\n`,
+      );
       const execSnapshots = mockExecAll(safeMiseVersionOutput);
 
-      await updateArtifacts({
+      const result = await updateArtifacts({
         packageFileName: 'mise.test.local.toml',
         updatedDeps: [
           { depName: 'ansible', datasource: 'pypi', newVersion: '14.5.0' },
@@ -405,6 +413,7 @@ describe('modules/manager/mise/artifacts', () => {
         config,
       });
 
+      expect(result).toBeNull();
       expect(execSnapshots.map(({ cmd }) => cmd)).toEqual([
         miseVersionCmd,
         trustEnvLocalCmd,
@@ -438,13 +447,20 @@ describe('modules/manager/mise/artifacts', () => {
     });
 
     it('does not return a phantom artifact when regeneration removes the lock', async () => {
-      fs.readLocalFile.mockResolvedValueOnce(originalLock).mockResolvedValue(null);
+      fs.readLocalFile
+        .mockResolvedValueOnce(originalLock)
+        .mockResolvedValue(null);
       mockExecAll(safeMiseVersionOutput);
 
       const result = await updateArtifacts({
         packageFileName: 'mise.toml',
         updatedDeps: [
-          { depName: 'ansible', datasource: 'pypi', newVersion: '14.5.0', newValue: 'latest' },
+          {
+            depName: 'ansible',
+            datasource: 'pypi',
+            newVersion: '14.5.0',
+            newValue: 'latest',
+          },
         ],
         newPackageFileContent: packageFileContent,
         config,
@@ -480,7 +496,7 @@ describe('modules/manager/mise/artifacts', () => {
           .replaceAll('old-checksum', 'new-checksum');
         const exactVersionLock = regeneratedLock.replace(
           'specifiers = ["latest"]',
-          'specifiers = ["2.6.0"]',
+          'specifiers = ["2.5.0","2.6.0"]',
         );
         const packageFileContent = '[tools]\nhk = "latest"\njq = "1.8.1"\n';
         const updated = updateLockedDependency({
@@ -498,21 +514,22 @@ describe('modules/manager/mise/artifacts', () => {
         expect(updated.files?.['mise.lock']).toContain('version = "2.6.0"');
         expect(updated.files?.['mise.lock']).toContain('/download/v2.5.0/');
         let workingLock = originalLock;
-        fs.readLocalFile.mockImplementation(async () => workingLock);
-        fs.writeLocalFile.mockImplementation(async (file, contents) => {
-          if (file === 'mise.lock' && typeof contents === 'string') {
+        fs.readLocalFile.mockImplementation(() => Promise.resolve(workingLock));
+        fs.writeLocalFile.mockImplementation((file, contents) => {
+          if (file === 'mise.lock' && isString(contents)) {
             workingLock = contents;
           }
+          return Promise.resolve();
         });
-        exec.mockImplementation(async (cmd) => {
+        exec.mockImplementation((cmd) => {
           if (cmd === miseVersionCmd) {
-            return safeMiseVersionOutput;
+            return Promise.resolve(safeMiseVersionOutput);
           }
           // Model mise retaining locked metadata on a plain successful refresh.
           if (cmd === 'mise lock --bump hk@2.6.0') {
             workingLock = exactVersionLock;
           }
-          return { stdout: '', stderr: '' };
+          return Promise.resolve({ stdout: '', stderr: '' });
         });
 
         const result = await updateArtifacts({
@@ -522,6 +539,7 @@ describe('modules/manager/mise/artifacts', () => {
               depName: 'hk',
               datasource: 'github-releases',
               newValue: 'latest',
+              currentVersion: '2.5.0',
               newVersion: '2.6.0',
             },
           ],
