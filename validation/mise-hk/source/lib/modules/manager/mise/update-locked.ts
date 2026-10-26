@@ -118,10 +118,10 @@ export function rebindUpdatedToolSelectors(
   updatedDeps: UpdateArtifact['updatedDeps'],
 ): string {
   const updates = updatedDeps.flatMap(
-    ({ depName, newVersion, newValue, currentValue }) =>
+    ({ depName, newVersion, newValue, currentValue, currentVersion }) =>
       isNonEmptyStringAndNotWhitespace(depName) &&
       isNonEmptyStringAndNotWhitespace(newVersion)
-        ? [{ depName, newVersion, newValue, currentValue }]
+        ? [{ depName, newVersion, newValue, currentValue, currentVersion }]
         : [],
   );
   if (!updates.length) {
@@ -132,7 +132,7 @@ export function rebindUpdatedToolSelectors(
     number,
     { end: number; specifiers: string[] }
   >();
-  for (const { depName: name, newVersion: version, newValue, currentValue } of updates) {
+  for (const { depName: name, newVersion: version, newValue, currentValue, currentVersion } of updates) {
     const entries = lockfile.getLockedTool(parsed, name);
     if (!entries) {
       throw new Error(`No regenerated mise lock entry for ${name}`);
@@ -171,8 +171,9 @@ export function rebindUpdatedToolSelectors(
       throw new Error(`Unsupported mise selector binding for ${name}`);
     }
     const previous = changes.get(value.range[0])?.specifiers ?? entry.specifiers;
+    const replaced = new Set([version, currentVersion, currentValue]);
     const specifiers = [...new Set([
-      ...previous.filter((item) => item !== version),
+      ...previous.filter((item) => !replaced.has(item)),
       selector,
     ])];
     if (

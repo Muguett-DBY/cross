@@ -25,6 +25,7 @@ env = dict(os.environ, HUSKY='0', FORCE_COLOR='0', CI='true')
 paths = ['lib/modules/manager/mise/' + name for name in [
     'artifacts.ts', 'artifacts.spec.ts', 'readme.md', 'update-locked.ts', 'update-locked.spec.ts', 'schema.ts']]
 original_production = (source / paths[0]).read_bytes()
+original_files = {relative: (source/relative).read_bytes() for relative in paths}
 assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip() == 'dafa4dcf670599c9573abf850ef46570e99dcabe'
 
 
@@ -101,57 +102,78 @@ for args in [['git', 'init', '-b', 'main'], ['git', 'add', 'mise.toml', 'mise.lo
 shutil.copyfile(latest_fixture/'mise.lock', reports/'fixture-latest-binding-mise.lock')
 env.pop('MISE_SAFE', None)
 probe = payload / 'probe.mjs'
+errors = []
+# Check the complete candidate first; keep independent runtime observations even
+# if a formatting/test problem needs repair, rather than stopping at one signal.
+for relative in paths:
+    shutil.copyfile(payload/'source'/relative, source/relative)
+fixed_check = run(['pnpm', 'check', '--all', 'lib/modules/manager/mise', '--coverage-dir', str(reports/'fixed-coverage')],
+                  'fixed-scoped-check', timeout=600)
+if fixed_check:
+    errors.append('fixed scoped check failed')
+for relative in paths:
+    target = reports/'formatted-source'/relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source/relative, target)
 cases = []
 for variant in ['old', 'fixed']:
     for relative in paths:
         target = source / relative
         if variant == 'fixed':
-            shutil.copyfile(payload / 'source' / relative, target)
+            shutil.copyfile(reports/'formatted-source'/relative, target)
+        else:
+            target.write_bytes(original_files[relative])
     for binding, seed in [('exact', fixture), ('latest', latest_fixture)]:
         for mode in ['allowlisted', 'safe']:
             label = variant + '-' + binding + '-' + mode
             out = reports / (label + '.json')
-            assert run(['node', str(probe), str(source), str(seed), str(scratch/label),
-                        str(reference/'mise.lock'), str(out), variant, mode, binding], label, timeout=300) == 0
-            cases.append(json.loads(out.read_text()))
-
-# Use the repository's required check entry point; it includes formatting, lint and tests.
-assert run(['pnpm', 'check', '--all', 'lib/modules/manager/mise', '--coverage-dir', str(reports/'fixed-coverage')],
-           'fixed-scoped-check', timeout=600) == 0
-for relative in paths:
-    target = reports / 'verified-source' / relative
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source / relative, target)
+            status = run(['node', str(probe), str(source), str(seed), str(scratch/label),
+                          str(reference/'mise.lock'), str(out), variant, mode, binding], label, timeout=300)
+            if status:
+                errors.append(label+' failed')
+            if out.exists():
+                cases.append(json.loads(out.read_text()))
 fixed_production = (source / paths[0]).read_bytes()
 try:
     (source / paths[0]).write_bytes(original_production)
     status = run(['pnpm', 'check', 'lib/modules/manager/mise', '--coverage-dir', str(reports/'old-coverage')],
                  'old-scoped-countercontrol', timeout=600)
     text = re.sub(r'\x1b\[[0-9;]*[mK]', '', (reports/'old-scoped-countercontrol.log').read_text())
-    assert status != 0, 'New regression tests must fail on the old draft'
-    assert '7 failed' in text, 'Only the selected-version regression cases should fail on the old draft'
-    assert 'regenerates aqua platform metadata after a version-only edit' in text
-    assert 'regenerates all selected tools in a mixed local-environment update' in text
+    expected_control = status != 0 and '7 failed' in text and \
+        'regenerates aqua platform metadata after a version-only edit' in text and \
+        'regenerates all selected tools in a mixed local-environment update' in text
+    if not expected_control:
+        errors.append('unexpected old artifact-module countercontrol result')
 finally:
     (source / paths[0]).write_bytes(fixed_production)
 
 changed = subprocess.check_output(['git', 'diff', '--name-only'], cwd=source, text=True).splitlines()
-assert sorted(changed) == sorted(paths), changed
+if sorted(changed) != sorted(paths):
+    errors.append('unexpected modified paths: '+str(changed))
 result = {'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
           'sourceBase': 'dafa4dcf670599c9573abf850ef46570e99dcabe',
           'mise': '2026.10.18', 'node': subprocess.check_output(['node','--version'],text=True).strip(),
           'hostPlatform': sys.platform, 'metadataPlatforms': platforms.split(','),
           'fixtureBindingVariants': ['Mise-generated exact request', 'controlled latest binding, real generated platform metadata unchanged'],
           'latestBindingBaselineIsObservational': True,
-          'actualManagerCases': cases, 'requiredScopedCheckPassed': True,
-          'oldDraftRegressionFailures': 7,
+          'actualManagerCases': cases, 'requiredScopedCheckPassed': fixed_check == 0,
+          'oldArtifactModuleCountercontrolPassed': expected_control,
+          'oldDraftRegressionFailures': 7 if expected_control else None,
           'verifiedSourceSha256': {p: hashlib.sha256((source/p).read_bytes()).hexdigest() for p in paths},
           'fullRenovateSuiteExecuted': False, 'foreignPlatformBinariesExecuted': False,
           'userComputerPackagesInstalled': False}
 (reports/'verified.json').write_text(json.dumps(result, indent=2)+'\n')
-assert run(['python3', '-B', str(payload/'public-hk/reproduce.py'), '--renovate', str(source),
-            '--output', str(scratch/'public-reproducer'), '--binding', 'exact', '--safe'],
-           'public-reproducer', timeout=300) == 0
-result['publicReproducerExecuted'] = True
+public_status = run(['python3', '-B', str(payload/'public-hk/reproduce.py'), '--renovate', str(source),
+                     '--output', str(scratch/'public-reproducer'), '--binding', 'exact', '--safe'],
+                    'public-reproducer', timeout=300)
+result['publicReproducerPassed'] = public_status == 0
+if public_status:
+    errors.append('public reproducer failed')
+result['errors'] = errors
 (reports/'verified.json').write_text(json.dumps(result, indent=2)+'\n')
+assert not errors, errors
+for relative in paths:
+    target = reports/'verified-source'/relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source/relative, target)
 print(json.dumps(result), flush=True)

@@ -46,6 +46,12 @@ describe('modules/manager/mise/update-locked', () => {
         .toBe(content.replace('["2.6.0"]', '["latest"]'));
     });
 
+    it('removes old version and replaced-selector bindings from the new entry', () => {
+      const stale = content.replace('["2.6.0"]', '["2.5.0","2.6.0","2","lts"]');
+      expect(rebindUpdatedToolSelectors(stale, [{ ...update, currentVersion: '2.5.0', currentValue: '2' }]))
+        .toBe(stale.replace('["2.5.0","2.6.0","2","lts"]', '["lts","latest"]'));
+    });
+
     it('preserves an already matching binding and unrelated selectors', () => {
       const bound = content.replace('["2.6.0"]', '["lts","latest"]');
       expect(rebindUpdatedToolSelectors(bound, [update])).toBe(bound);
