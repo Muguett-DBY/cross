@@ -1,0 +1,43 @@
+name: Verify synchronized idle MCP handling
+on:
+  push:
+    branches: [probe/opencode-sync-2026-10-27]
+    paths:
+      - .github/workflows/probe-opencode-sync.yml
+      - validation/opencode-sync/**
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-client-and-repository
+            os: ubuntu-24.04
+          - name: windows-client
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.4'
+      - run: python -B -X utf8 validation/opencode-sync/probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: opencode-sync-${{ matrix.name }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7

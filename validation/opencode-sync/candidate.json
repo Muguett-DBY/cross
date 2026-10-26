@@ -1,0 +1,22 @@
+{
+  "preparedAtUtc": "2026-10-26T16:42:24.890880+00:00",
+  "oldPRHead": "c42e3e680f31ac871d31d9290f7dd8d9d15d08c3",
+  "upstreamHead": "ab4d1f3ab1a05278b4d0392124b9e7f1c8131f17",
+  "candidateHead": "44cb43336e41bc755917b3d4b3ab09ae24fdda37",
+  "candidateTree": "d8f5b89b5549f8880fb98d016750ace8ef14a247",
+  "candidateBranch": "sync-idle-mcp",
+  "paths": {
+    "packages/client/src/solid/data.ts": "51a4b6da5ac048ec2d6d0dfcae10b4c2f07e647874a0bde8b9a159b75bb2144a",
+    "packages/client/test/solid-data.test.ts": "2922bcbd2916c8fb895c159fa4df6dbaae09e39c8ac58655d9b25cdadbb49640"
+  },
+  "parents": [
+    "c42e3e680f31ac871d31d9290f7dd8d9d15d08c3",
+    "ab4d1f3ab1a05278b4d0392124b9e7f1c8131f17"
+  ],
+  "ownForkActionsDisabled": true,
+  "prBranchNotUpdatedYet": true,
+  "newPR": false,
+  "newFork": false,
+  "noLocalDependencies": true,
+  "noNewSchedule": true
+}
