@@ -107,7 +107,9 @@ describe('modules/manager/mise/update-locked', () => {
     ])(
       'rejects a missing entry or unknown configured selector: %j',
       (invalid) => {
-        expect(() => rebindUpdatedToolSelectors(content, [invalid])).toThrow(/mise/);
+        expect(() => rebindUpdatedToolSelectors(content, [invalid])).toThrow(
+          /mise/,
+        );
       },
     );
 

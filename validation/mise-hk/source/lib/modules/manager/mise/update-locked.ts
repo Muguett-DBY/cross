@@ -3,6 +3,7 @@ import {
   isNullOrUndefined,
 } from '@sindresorhus/is';
 import type { AST } from 'toml-eslint-parser';
+import { coerceArray } from '../../../util/array.ts';
 import { logger } from '../../../logger/index.ts';
 import { regEx } from '../../../util/regex.ts';
 import { safeStringify } from '../../../util/stringify.ts';
@@ -150,7 +151,7 @@ export function rebindUpdatedToolSelectors(
     }
     const targets = entries.filter(
       (entry) =>
-        (entry.specifiers ?? []).includes(version) || entry.version === version,
+        coerceArray(entry.specifiers).includes(version) || entry.version === version,
     );
     if (targets.length !== 1) {
       throw new Error(
