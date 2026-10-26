@@ -1,21 +1,18 @@
-name: Verify photography dependency repairs
+name: Prepare combined photography dependency repair
 on:
   push:
     branches: [probe/photography-dependencies-2026-10-27]
     paths:
       - .github/workflows/probe-photography-dependencies.yml
-      - validation/photography-dependencies/probe.py
+      - validation/photography-dependencies/combined.py
+      - validation/photography-dependencies/vite.config.ts
 permissions:
   contents: read
 jobs:
-  verify:
+  generate:
+    name: combined-generation
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        kind: [runtime, tooling]
-    name: photography-${{ matrix.kind }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,11 +24,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm install --global npm@12.0.2
-      - run: python -B validation/photography-dependencies/probe.py ${{ matrix.kind }}
+      - run: python -B validation/photography-dependencies/combined.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: photography-${{ matrix.kind }}
+          name: photography-combined-generation
           path: reports/
           if-no-files-found: error
           retention-days: 7
