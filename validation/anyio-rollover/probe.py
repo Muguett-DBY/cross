@@ -22,6 +22,7 @@ SRC = WORK / "anyio"
 OUT = ROOT / "reports"
 WORK.mkdir(exist_ok=True)
 OUT.mkdir(exist_ok=True)
+(WORK / "pytest").mkdir(exist_ok=True)
 ENV = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1",
            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PIP_NO_CACHE_DIR="1",
            PRE_COMMIT_HOME=str(WORK / "pre-commit-cache"))

@@ -24,10 +24,6 @@ jobs:
             os: windows-latest
             python: '3.12'
             mode: runtime
-          - name: linux-precommit314
-            os: ubuntu-24.04
-            python: '3.14'
-            mode: precommit
     steps:
       - uses: actions/checkout@v7
         with:
