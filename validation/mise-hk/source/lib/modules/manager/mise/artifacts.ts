@@ -30,6 +30,7 @@ import {
   updateLockFile,
 } from '../util.ts';
 import { getConfigType, getLockFileName, getSidecarDir } from './lockfile.ts';
+import { rebindUpdatedToolSelectors } from './update-locked.ts';
 
 /**
  * First mise release that supports the features this manager relies on:
@@ -203,7 +204,8 @@ export async function updateArtifacts({
   const { isLocal, env } = getConfigType(packageFileName);
   const localFlag = isLocal ? ' --local' : '';
 
-  let lockCmd: string;
+  const regenerateSelected = miseSupportsSafeFeatures && selectedTools.length > 0;
+  let lockCmd: string | undefined;
   if (config.isLockFileMaintenance) {
     // Lock file maintenance means "update to the latest versions". Plain
     // `mise lock` only refreshes metadata for already-locked versions, so use
@@ -214,13 +216,19 @@ export async function updateArtifacts({
     lockCmd = `mise lock${localFlag}${bumpFlag}`;
   } else {
     const tools = updatedDeps
+      .filter(
+        ({ newVersion }) =>
+          !regenerateSelected || !isNonEmptyStringAndNotWhitespace(newVersion),
+      )
       .map(({ depName }) => depName)
       .filter(isNonEmptyStringAndNotWhitespace)
       .map(quote)
       .join(' ');
-    lockCmd = tools
-      ? `mise lock${localFlag} ${tools}`
-      : `mise lock${localFlag}`;
+    if (tools) {
+      lockCmd = `mise lock${localFlag} ${tools}`;
+    } else if (!regenerateSelected) {
+      lockCmd = `mise lock${localFlag}`;
+    }
   }
 
   const extraEnv: ExtraEnv = {};
@@ -258,12 +266,16 @@ export async function updateArtifacts({
   const commands = safeMode
     ? []
     : [`mise trust ${quote(upath.basename(packageFileName))}`];
-  if (miseSupportsSafeFeatures && selectedTools.length) {
+  if (regenerateSelected) {
     // Regenerate platform metadata and sidecars at the selected versions.
     // Bare tool names with --bump could advance fuzzy selectors.
     commands.push(`mise lock${localFlag} --bump ${selectedTools.join(' ')}`);
   }
-  commands.push(lockCmd);
+  if (lockCmd) {
+    // Do not refresh selected tools again: their configured selectors could
+    // re-resolve and replace the exact versions just regenerated above.
+    commands.push(lockCmd);
+  }
 
   try {
     if (newLockFileContent) {
@@ -273,7 +285,18 @@ export async function updateArtifacts({
       lockFileName,
       existingLockFileContent: originalLockFileContent,
       packageFile: { path: packageFileName, contents: newPackageFileContent },
-      run: () => exec(commands, execOptions),
+      run: async () => {
+        await exec(commands, execOptions);
+        if (regenerateSelected) {
+          const generated = await readLocalFile(lockFileName, 'utf8');
+          if (generated) {
+            const rebound = rebindUpdatedToolSelectors(generated, updatedDeps);
+            if (rebound !== generated) {
+              await writeLocalFile(lockFileName, rebound);
+            }
+          }
+        }
+      },
     });
     const results = [
       ...coerceArray(lockFileResults),

@@ -22,7 +22,8 @@ reports.mkdir()
 scratch = Path(os.environ['RUNNER_TEMP']).resolve() / 'mise-hk-validation'
 scratch.mkdir()
 env = dict(os.environ, HUSKY='0', FORCE_COLOR='0', CI='true')
-paths = ['lib/modules/manager/mise/' + name for name in ['artifacts.ts', 'artifacts.spec.ts', 'readme.md']]
+paths = ['lib/modules/manager/mise/' + name for name in [
+    'artifacts.ts', 'artifacts.spec.ts', 'readme.md', 'update-locked.ts', 'update-locked.spec.ts', 'schema.ts']]
 original_production = (source / paths[0]).read_bytes()
 assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip() == 'dafa4dcf670599c9573abf850ef46570e99dcabe'
 
@@ -86,6 +87,18 @@ for name in ['mise.toml', 'mise.lock']:
 assert run(['mise', 'lock', '--bump', 'hk@2.6.0'], 'reference-lock', reference, 300) == 0
 assert (reference / 'mise.toml').read_text() == config
 shutil.copyfile(reference/'mise.lock', reports/'reference-mise.lock')
+latest_fixture = scratch / 'fixture-latest-binding'
+latest_fixture.mkdir()
+latest_lock = (fixture/'mise.lock').read_text()
+assert latest_lock.count('specifiers = ["2.5.0"]') == 1
+latest_lock = latest_lock.replace('specifiers = ["2.5.0"]', 'specifiers = ["latest"]', 1)
+(latest_fixture/'mise.toml').write_text(config)
+(latest_fixture/'mise.lock').write_text(latest_lock)
+for args in [['git', 'init', '-b', 'main'], ['git', 'add', 'mise.toml', 'mise.lock'],
+             ['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+              'commit', '-m', 'Model the reported latest request binding without changing platform metadata']]:
+    assert run(args, 'latest-seed-git-' + args[1], latest_fixture) == 0
+shutil.copyfile(latest_fixture/'mise.lock', reports/'fixture-latest-binding-mise.lock')
 env.pop('MISE_SAFE', None)
 probe = payload / 'probe.mjs'
 cases = []
@@ -94,12 +107,13 @@ for variant in ['old', 'fixed']:
         target = source / relative
         if variant == 'fixed':
             shutil.copyfile(payload / 'source' / relative, target)
-    for mode in ['allowlisted', 'safe']:
-        label = variant + '-' + mode
-        out = reports / (label + '.json')
-        assert run(['node', str(probe), str(source), str(fixture), str(scratch/label),
-                    str(reference/'mise.lock'), str(out), variant, mode], label, timeout=300) == 0
-        cases.append(json.loads(out.read_text()))
+    for binding, seed in [('exact', fixture), ('latest', latest_fixture)]:
+        for mode in ['allowlisted', 'safe']:
+            label = variant + '-' + binding + '-' + mode
+            out = reports / (label + '.json')
+            assert run(['node', str(probe), str(source), str(seed), str(scratch/label),
+                        str(reference/'mise.lock'), str(out), variant, mode, binding], label, timeout=300) == 0
+            cases.append(json.loads(out.read_text()))
 
 # Use the repository's required check entry point; it includes formatting, lint and tests.
 assert run(['pnpm', 'check', '--all', 'lib/modules/manager/mise', '--coverage-dir', str(reports/'fixed-coverage')],
@@ -115,7 +129,7 @@ try:
                  'old-scoped-countercontrol', timeout=600)
     text = re.sub(r'\x1b\[[0-9;]*[mK]', '', (reports/'old-scoped-countercontrol.log').read_text())
     assert status != 0, 'New regression tests must fail on the old draft'
-    assert '3 failed' in text, 'Only the two aqua cases and changed mixed-tool expectation should fail'
+    assert '7 failed' in text, 'Only the selected-version regression cases should fail on the old draft'
     assert 'regenerates aqua platform metadata after a version-only edit' in text
     assert 'regenerates all selected tools in a mixed local-environment update' in text
 finally:
@@ -127,8 +141,9 @@ result = {'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
           'sourceBase': 'dafa4dcf670599c9573abf850ef46570e99dcabe',
           'mise': '2026.10.18', 'node': subprocess.check_output(['node','--version'],text=True).strip(),
           'hostPlatform': sys.platform, 'metadataPlatforms': platforms.split(','),
+          'fixtureBindingVariants': ['Mise-generated exact request', 'controlled latest binding, real generated platform metadata unchanged'],
           'actualManagerCases': cases, 'requiredScopedCheckPassed': True,
-          'oldDraftRegressionFailures': 3,
+          'oldDraftRegressionFailures': 7,
           'verifiedSourceSha256': {p: hashlib.sha256((source/p).read_bytes()).hexdigest() for p in paths},
           'fullRenovateSuiteExecuted': False, 'foreignPlatformBinariesExecuted': False,
           'userComputerPackagesInstalled': False}

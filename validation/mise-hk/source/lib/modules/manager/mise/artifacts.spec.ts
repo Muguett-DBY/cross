@@ -333,6 +333,7 @@ describe('modules/manager/mise/artifacts', () => {
         fs.readLocalFile
           .mockResolvedValueOnce(originalLock)
           .mockResolvedValueOnce(updatedLock)
+          .mockResolvedValueOnce(updatedLock)
           .mockResolvedValueOnce('updated Python lock');
         git.getRepoStatus.mockResolvedValueOnce(
           partial<StatusResult>({
@@ -362,7 +363,6 @@ describe('modules/manager/mise/artifacts', () => {
           miseVersionCmd,
           ...(allowlisted ? [trustCmd] : []),
           'mise lock --bump ansible@14.5.0',
-          'mise lock ansible',
         ]);
         expect(result).toEqual([
           {
@@ -409,11 +409,48 @@ describe('modules/manager/mise/artifacts', () => {
         miseVersionCmd,
         trustEnvLocalCmd,
         'mise lock --local --bump ansible@14.5.0 node@24.16.0',
-        'mise lock --local ansible node',
       ]);
-      expect(execSnapshots.at(-2)?.options?.env).toMatchObject({
+      expect(execSnapshots.at(-1)?.options?.env).toMatchObject({
         MISE_ENV: 'test',
       });
+    });
+
+    it('refreshes tools without a selected version separately', async () => {
+      fs.readLocalFile.mockResolvedValue(originalLock);
+      const execSnapshots = mockExecAll(safeMiseVersionOutput);
+
+      await updateArtifacts({
+        packageFileName: 'mise.toml',
+        updatedDeps: [
+          { depName: 'ansible', datasource: 'pypi', newVersion: '14.5.0' },
+          { depName: 'node', datasource: 'node-version' },
+        ],
+        newPackageFileContent: packageFileContent,
+        config,
+      });
+
+      expect(execSnapshots.map(({ cmd }) => cmd)).toEqual([
+        miseVersionCmd,
+        trustCmd,
+        'mise lock --bump ansible@14.5.0',
+        'mise lock node',
+      ]);
+    });
+
+    it('does not return a phantom artifact when regeneration removes the lock', async () => {
+      fs.readLocalFile.mockResolvedValueOnce(originalLock).mockResolvedValue(null);
+      mockExecAll(safeMiseVersionOutput);
+
+      const result = await updateArtifacts({
+        packageFileName: 'mise.toml',
+        updatedDeps: [
+          { depName: 'ansible', datasource: 'pypi', newVersion: '14.5.0', newValue: 'latest' },
+        ],
+        newPackageFileContent: packageFileContent,
+        config,
+      });
+
+      expect(result).toBeNull();
     });
 
     it.each([true, false])(
@@ -427,6 +464,7 @@ describe('modules/manager/mise/artifacts', () => {
           [[tools.hk]]
           version = "2.5.0"
           backend = "aqua:jdx/hk"
+          specifiers = ["latest"]
           [tools.hk.platforms.linux-x64]
           url = "https://github.com/jdx/hk/releases/download/v2.5.0/hk-x86_64-unknown-linux-gnu.tar.gz"
           checksum = "old-checksum"
@@ -440,6 +478,10 @@ describe('modules/manager/mise/artifacts', () => {
         const regeneratedLock = originalLock
           .replaceAll('2.5.0', '2.6.0')
           .replaceAll('old-checksum', 'new-checksum');
+        const exactVersionLock = regeneratedLock.replace(
+          'specifiers = ["latest"]',
+          'specifiers = ["2.6.0"]',
+        );
         const packageFileContent = '[tools]\nhk = "latest"\njq = "1.8.1"\n';
         const updated = updateLockedDependency({
           packageFile: 'mise.toml',
@@ -468,7 +510,7 @@ describe('modules/manager/mise/artifacts', () => {
           }
           // Model mise retaining locked metadata on a plain successful refresh.
           if (cmd === 'mise lock --bump hk@2.6.0') {
-            workingLock = regeneratedLock;
+            workingLock = exactVersionLock;
           }
           return { stdout: '', stderr: '' };
         });
@@ -567,7 +609,6 @@ describe('modules/manager/mise/artifacts', () => {
         miseVersionCmd,
         trustCmd,
         "mise lock --bump 'pypi:ansible@14.5.0; echo unwanted'",
-        'mise lock pypi:ansible',
       ]);
     });
 
