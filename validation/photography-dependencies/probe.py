@@ -26,12 +26,26 @@ assert run("head-readback",["git","rev-parse","HEAD"]).decode().strip()==HEADS[K
 run("npm-version",["npm","--version"])
 run("node-version",["node","--version"])
 run("install",["npm","ci"])
+package_path=SRC/"package.json"
+package=json.loads(package_path.read_text())
+direct_dependencies={key:dict(package[key]) for key in ["dependencies","devDependencies"]}
+package.setdefault("overrides",{})["miniflare"]={"undici":"^7.30.1"}
+package_path.write_text(json.dumps(package,indent=2)+"\n",encoding="utf-8")
+run("lock-security-fix",["npm","audit","fix","--package-lock-only","--ignore-scripts"])
+run("install-repaired-lock",["npm","ci"])
+package=json.loads(package_path.read_text())
+assert all(package[key]==values for key,values in direct_dependencies.items())
+lock=json.loads((SRC/"package-lock.json").read_text())
+report["repairedTransitiveVersions"]={name:lock["packages"]["node_modules/"+name]["version"] for name in ["undici","fast-uri","serialize-javascript"]}
+assert report["repairedTransitiveVersions"]["undici"].startswith("7.")
+report["auditAfterRepair"]=json.loads(run("audit-after-repair",["npm","audit","--json"]))
+assert report["auditAfterRepair"]["metadata"]["vulnerabilities"]["total"]==0
 if KIND=="tooling":
     before=run("types-before",["npm","run","cf:types:check"],expected=(1,))
     assert b"out of date" in before or b"out of date" in (OUT/"types-before.log").read_bytes()
     run("types-generate",["npm","run","cf:types"])
     run("types-after",["npm","run","cf:types:check"])
-    patch_paths=["worker-configuration.d.ts"]
+    patch_paths=["worker-configuration.d.ts","package.json","package-lock.json"]
 else:
     run("types-unchanged",["npm","run","cf:types:check"])
     run("baseline-build",["npm","run","build:full"],expected=(1,))
@@ -41,7 +55,7 @@ else:
     (OUT/"baseline-manifest.json").write_bytes(manifest.read_bytes())
     base_manifest=json.loads(manifest.read_text())
     (OUT/"baseline-main-entry.js").write_bytes((SRC/"dist"/base_manifest["index.html"]["file"]).read_bytes())
-    patch_paths=[]
+    patch_paths=["package.json","package-lock.json"]
 config=SRC/"vite.config.ts"; text=config.read_text()
 anchor='          groups: [\n'
 assert text.count(anchor)==1
