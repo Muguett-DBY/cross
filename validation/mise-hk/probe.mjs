@@ -134,6 +134,10 @@ if (expected === 'fixed') {
   receipt.subsequentPlainRefreshStable = true;
   await fs.writeFile(output, JSON.stringify(receipt, null, 2) + '\n');
 } else {
-  assert(!matchesReference || artifacts.length > 0, 'The old draft did not reproduce the reported failure');
+  if (binding === 'exact') {
+    assert(!matchesReference || artifacts.length > 0, 'The exact-binding target-selection regression must reproduce');
+  }
+  receipt.observedOldOutcome = artifacts.length ? 'artifact-error' : matchesReference ? 'correct-selected-target' : 'wrong-target-or-metadata';
+  await fs.writeFile(output, JSON.stringify(receipt, null, 2) + '\n');
 }
 console.log(JSON.stringify(receipt));

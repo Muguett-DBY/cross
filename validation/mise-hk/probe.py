@@ -142,10 +142,16 @@ result = {'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
           'mise': '2026.10.18', 'node': subprocess.check_output(['node','--version'],text=True).strip(),
           'hostPlatform': sys.platform, 'metadataPlatforms': platforms.split(','),
           'fixtureBindingVariants': ['Mise-generated exact request', 'controlled latest binding, real generated platform metadata unchanged'],
+          'latestBindingBaselineIsObservational': True,
           'actualManagerCases': cases, 'requiredScopedCheckPassed': True,
           'oldDraftRegressionFailures': 7,
           'verifiedSourceSha256': {p: hashlib.sha256((source/p).read_bytes()).hexdigest() for p in paths},
           'fullRenovateSuiteExecuted': False, 'foreignPlatformBinariesExecuted': False,
           'userComputerPackagesInstalled': False}
+(reports/'verified.json').write_text(json.dumps(result, indent=2)+'\n')
+assert run(['python3', '-B', str(payload/'public-hk/reproduce.py'), '--renovate', str(source),
+            '--output', str(scratch/'public-reproducer'), '--binding', 'exact', '--safe'],
+           'public-reproducer', timeout=300) == 0
+result['publicReproducerExecuted'] = True
 (reports/'verified.json').write_text(json.dumps(result, indent=2)+'\n')
 print(json.dumps(result), flush=True)
