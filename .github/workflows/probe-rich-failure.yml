@@ -1,0 +1,39 @@
+name: Verify per-task Rich failure markers
+on:
+  push:
+    branches: [probe/rich-failure-marker-2026-10-27]
+    paths:
+      - .github/workflows/probe-rich-failure.yml
+      - validation/rich-failure/**
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-cpython312
+            os: ubuntu-24.04
+          - name: windows-cpython312
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -B -X utf8 validation/rich-failure/probe.py
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rich-failure-${{ matrix.name }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7

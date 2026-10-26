@@ -1,0 +1,31 @@
+Yes — a small `SpinnerColumn` subclass can choose the marker from each task's fields:
+
+```python
+from rich.console import RenderableType
+from rich.progress import SpinnerColumn, Task
+from rich.text import Text
+
+
+class OutcomeSpinnerColumn(SpinnerColumn):
+    def render(self, task: Task) -> RenderableType:
+        if task.fields.get("failed", False):
+            return Text("x", style="red")
+        return super().render(task)
+```
+
+Replace `SpinnerColumn(finished_text=finished_text)` in your example with `OutcomeSpinnerColumn(finished_text=finished_text)`. When a command fails:
+
+```python
+progress.stop_task(task_id)
+progress.update(task_id, failed=True, refresh=True)
+```
+
+The failed row shows a red `x`; other rows keep their spinner or normal `finished_text`. The column instance is shared by the tasks, so changing its `finished_text` directly would also change other finished rows.
+
+`stop_task()` freezes elapsed time. It doesn't mark the task completed, and `failed` here is your own field, not a built-in failure state. If your loop waits on `progress.finished`, you still need to account for failed tasks in that loop.
+
+Checked with Rich 13.9.4 and 15.0.0 on Windows and Linux, including concurrent running, successful and failed rows. These are captured Rich renders, not terminal-emulator tests.
+
+References: [custom columns and task fields](https://rich.readthedocs.io/en/stable/progress.html#customizing), [stop_task](https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.stop_task).
+
+Prepared with OpenAI Codex assistance; the example was run and its output checked.
