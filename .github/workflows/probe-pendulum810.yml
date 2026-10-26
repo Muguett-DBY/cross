@@ -1,0 +1,65 @@
+{
+  "name": "Verify Pendulum timezone data and source precedence",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/pendulum-timezone-data-2026-10-26"
+      ],
+      "paths": [
+        "validation/pendulum810/**",
+        ".github/workflows/probe-pendulum810.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "name": "Timezone data (${{ matrix.os }})",
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-24.04",
+            "windows-latest"
+          ]
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 10,
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Check released Pendulum and tzdata with fresh processes",
+          "run": "python -B -X utf8 validation/pendulum810/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "pendulum810-${{ matrix.os }}",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
