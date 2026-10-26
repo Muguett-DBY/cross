@@ -39,13 +39,20 @@ else:
     run("baseline-bundle",["npm","run","bundle:analyze"])
     manifest=SRC/"dist/.vite/manifest.json"
     (OUT/"baseline-manifest.json").write_bytes(manifest.read_bytes())
+    base_manifest=json.loads(manifest.read_text())
+    (OUT/"baseline-main-entry.js").write_bytes((SRC/"dist"/base_manifest["index.html"]["file"]).read_bytes())
     patch_paths=[]
 config=SRC/"vite.config.ts"; text=config.read_text()
-start=text.index('            {\n              name: "icon-vendor",')
-end=text.index('            {\n              name: "immersive-vendor",',start)
-block=text[start:end]; assert block.count('name:')==1 and 'lucide-react' in block
-config.write_text(text[:start]+text[end:],encoding="utf-8")
-report["changeRationale"]="Let the bundler share and split Lucide modules by usage instead of loading every site's used icons through one global vendor chunk. Page budgets are unchanged."
+anchor='          groups: [\n'
+assert text.count(anchor)==1
+navigation = r"""            {
+              name: "shared-navigation",
+              test: /src[\\/](?:routing[\\/]RoutePreloadProvider\.tsx|components[\\/]shared[\\/]PrefetchLink\.tsx|lib[\\/]view-transition\.ts)$/,
+              priority: 110,
+            },
+"""
+config.write_text(text.replace(anchor,anchor+navigation,1),encoding="utf-8")
+report["changeRationale"]="Keep the shared prefetch link, context and view-transition state in one small independent chunk instead of folding them into the application entry. Preserve all existing vendor groups and performance limits."
 patch_paths.append("vite.config.ts")
 report["budgetScriptSha256"]=hashlib.sha256((SRC/"scripts/check-route-budgets.mjs").read_bytes()).hexdigest()
 for path in patch_paths:
@@ -58,6 +65,11 @@ run("content",["npm","run","law:scan"])
 run("build",["npm","run","build:full"])
 if KIND=="runtime":
     (OUT/"patched-manifest.json").write_bytes((SRC/"dist/.vite/manifest.json").read_bytes())
+built_manifest=json.loads((SRC/"dist/.vite/manifest.json").read_text())
+report["navigationChunkFiles"]=[x["file"] for x in built_manifest.values() if "shared-navigation" in x.get("file","")]
+assert len(report["navigationChunkFiles"])==1
+report["projectsDirectImports"]=built_manifest["src/pages/ProjectsPage.tsx"]["imports"]
+(OUT/"final-manifest.json").write_bytes((SRC/"dist/.vite/manifest.json").read_bytes())
 run("audit",["npm","run","deps:audit"])
 run("browser-install",["npx","--no-install","playwright","install","--with-deps","chromium"])
 run("browser",["npm","run","test:e2e"],timeout=1200)
