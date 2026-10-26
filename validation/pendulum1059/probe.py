@@ -314,4 +314,5 @@ report["scope"] = (
 )
 save()
 print(json.dumps({"allChecksPassed": True, "tests": report["testSuites"],
-                  "offsetComparisons": value["offsetComparisons"], "windowsRegistryChecks": sys.platform == "win32"}))
+                  "offsetComparisons": report["independentChecks"]["offsetComparisons"],
+                  "windowsRegistryChecks": sys.platform == "win32"}))
