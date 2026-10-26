@@ -1,0 +1,78 @@
+{
+  "name": "Verify Funcy join input retention",
+  "on": {
+    "push": {
+      "branches": [
+        "probe/funcy-join-retention-2026-10-27"
+      ],
+      "paths": [
+        "validation/funcy-join/**",
+        ".github/workflows/probe-funcy-join.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "name": "Join retention (${{ matrix.label }})",
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "label": "linux-cpython312",
+              "os": "ubuntu-24.04",
+              "python": "3.12"
+            },
+            {
+              "label": "windows-cpython312",
+              "os": "windows-latest",
+              "python": "3.12"
+            },
+            {
+              "label": "linux-pypy311",
+              "os": "ubuntu-24.04",
+              "python": "pypy3.11"
+            }
+          ]
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 8,
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v6",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@v6",
+          "with": {
+            "python-version": "${{ matrix.python }}"
+          }
+        },
+        {
+          "name": "Run complete suite, flake8 and causal regression controls",
+          "run": "python -B -X utf8 validation/funcy-join/probe.py"
+        },
+        {
+          "uses": "actions/upload-artifact@v6",
+          "if": "always()",
+          "with": {
+            "name": "funcy-join-${{ matrix.label }}",
+            "path": "reports/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
