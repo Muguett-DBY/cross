@@ -52,6 +52,11 @@ def junit(path: Path) -> dict[str, int]:
             for field in ["tests", "failures", "errors", "skipped"]}
 
 
+def failure_names(path: Path) -> list[str]:
+    return [c.get("name", "") for c in ET.parse(path).iter("testcase")
+            if c.find("failure") is not None or c.find("error") is not None]
+
+
 run("git-init", ["git", "init", str(SRC)])
 run("git-remote", ["git", "-C", str(SRC), "remote", "add", "origin",
                    "https://github.com/python-pendulum/pendulum.git"])
@@ -65,13 +70,12 @@ folder = WORK / "venv"
 venv.EnvBuilder(with_pip=True).create(folder)
 python = folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 run("install", [str(python), "-m", "pip", "install", "--no-cache-dir", "-e", str(SRC) + "[test]",
-                "pytest==9.0.3", "pytest-benchmark==4.0.0", "tzdata==2026.5"], timeout=600)
+                "pytest==9.0.3", "pytest-benchmark==4.0.0", "tzdata==2026.5",
+                "python-dateutil==3.0.0"], timeout=600)
 ENV["PYTHONPATH"] = str(SRC / "src")
 run("installed-versions", [str(python), "-m", "pip", "freeze"])
 
-report["testSuites"] = {}
-report["executionModes"] = {}
-for name, flag in [("pure-python", "0"), ("rust-extension", "1")]:
+def select_mode(label: str, flag: str) -> dict:
     ENV["PENDULUM_EXTENSIONS"] = flag
     mode_check = (
         "import json,os,pendulum,pendulum.helpers as h; "
@@ -81,10 +85,52 @@ for name, flag in [("pure-python", "0"), ("rust-extension", "1")]:
         "print(json.dumps({'flag':os.environ['PENDULUM_EXTENSIONS'],"
         "'selectedModule':expected.__name__,'packagePath':pendulum.__file__}))"
     )
-    report["executionModes"][name] = json.loads(run(
-        name + "-mode", [str(python), "-B", "-c", mode_check], cwd=SRC))
-    full = OUT / (name + "-tests.xml")
-    run(name + "-tests", [str(python), "-B", "-m", "pytest", "tests", "-q",
+    return json.loads(run(label + "-mode", [str(python), "-B", "-c", mode_check], cwd=SRC))
+
+
+behavior_code = (
+    "from datetime import datetime; import json,importlib.metadata,pendulum; from dateutil import tz; "
+    "named=tz.gettz('Europe/Paris'); generic=tz.tzoffset('custom',7200); "
+    "named_result=pendulum.instance(datetime(2016,8,7,12,34,56,tzinfo=named)); "
+    "generic_result=pendulum.instance(datetime(2016,8,7,12,34,56,tzinfo=generic)); "
+    "assert not hasattr(generic,'key') and not hasattr(generic,'localize'); "
+    "assert generic_result.timezone_name=='+02:00' and generic_result.offset==7200; "
+    "assert named_result.offset==7200; "
+    "print(json.dumps({'dateutil':importlib.metadata.version('python-dateutil'),"
+    "'namedType':type(named).__module__+'.'+type(named).__qualname__,"
+    "'namedKey':getattr(named,'key',None),'namedResult':named_result.timezone_name,"
+    "'genericType':type(generic).__module__+'.'+type(generic).__qualname__,"
+    "'genericResult':generic_result.timezone_name}))"
+)
+report["dateutil3Behavior"] = json.loads(run(
+    "dateutil3-behavior", [str(python), "-B", "-c", behavior_code], cwd=SRC))
+assert report["dateutil3Behavior"]["namedKey"] == "Europe/Paris"
+assert report["dateutil3Behavior"]["namedResult"] == "Europe/Paris"
+
+changed_files = run("pr-changed-files", ["git", "-C", str(SRC), "diff", "--name-only", BASE, HEAD]).decode().splitlines()
+assert set(changed_files) == {"src/pendulum/tz/data/windows.py", "tests/tz/test_local_timezone.py"}
+run("checkout-master-baseline", ["git", "-C", str(SRC), "checkout", "--detach", BASE])
+report["unmodifiedMasterDateutil3"] = {}
+for name, flag in [("pure-python", "0"), ("rust-extension", "1")]:
+    select_mode("master-dateutil3-" + name, flag)
+    result_path = OUT / ("master-dateutil3-" + name + ".xml")
+    run("master-dateutil3-" + name, [str(python), "-B", "-m", "pytest", "-q",
+        "tests/test_main.py::test_instance_with_aware_datetime_any_tzinfo",
+        "--junitxml=" + str(result_path)], cwd=SRC, expected=(1,))
+    value = junit(result_path)
+    assert value == {"tests": 1, "failures": 1, "errors": 0, "skipped": 0}
+    assert failure_names(result_path) == ["test_instance_with_aware_datetime_any_tzinfo"]
+    report["unmodifiedMasterDateutil3"][name] = value
+    save()
+run("restore-pr-head", ["git", "-C", str(SRC), "checkout", "--detach", HEAD])
+run("install-locked-dateutil", [str(python), "-m", "pip", "install", "--no-cache-dir",
+                                "python-dateutil==2.9.0.post0"])
+report["testSuites"] = {}
+report["executionModes"] = {}
+for name, flag in [("pure-python", "0"), ("rust-extension", "1")]:
+    report["executionModes"][name] = select_mode("review-" + name, flag)
+    full = OUT / ("review-" + name + "-tests.xml")
+    run("review-" + name + "-tests", [str(python), "-B", "-m", "pytest", "tests", "-q",
                           "--benchmark-disable", "--junitxml=" + str(full)],
         cwd=SRC, timeout=360)
     value = junit(full)
@@ -216,10 +262,53 @@ report["restoredRegressions"] = junit(restored)
 assert report["restoredRegressions"] == {"tests": 10, "failures": 0, "errors": 0, "skipped": 0}
 run("source-unchanged", ["git", "-C", str(SRC), "diff", "--exit-code"])
 report["mappingSha256"] = hashlib.sha256(original).hexdigest()
+
+run("checkout-master-for-fixture-fix", ["git", "-C", str(SRC), "checkout", "--detach", BASE])
+test_file = SRC / "tests/test_main.py"
+original_test = test_file.read_text(encoding="utf-8")
+old = 'tzinfo=tz.gettz("Europe/Paris")'
+new = 'tzinfo=tz.tzoffset("custom", 7200)'
+assert original_test.count(old) == 1
+patched_test = original_test.replace(old, new)
+test_file.write_text(patched_test, encoding="utf-8")
+patch_text = run("fixture-fix-diff", ["git", "-C", str(SRC), "diff", "--", "tests/test_main.py"]).decode()
+numstat = run("fixture-fix-numstat", ["git", "-C", str(SRC), "diff", "--numstat"]).decode().strip()
+assert numstat == "1\t1\ttests/test_main.py", numstat
+report["fixtureFix"] = {"base": BASE, "path": "tests/test_main.py", "diff": patch_text,
+                        "oldSha256": hashlib.sha256(original_test.encode()).hexdigest(),
+                        "newSha256": hashlib.sha256(patched_test.encode()).hexdigest(),
+                        "sourceOrDependencyConstraintsChanged": False, "versions": {}}
+for version in ["2.9.0.post0", "3.0.0"]:
+    run("fixture-install-dateutil-" + version, [str(python), "-m", "pip", "install", "--no-cache-dir",
+                                               "python-dateutil==" + version])
+    behavior = json.loads(run("fixture-behavior-" + version,
+                             [str(python), "-B", "-c", behavior_code], cwd=SRC))
+    assert behavior["dateutil"] == version
+    if version == "3.0.0":
+        assert behavior["namedKey"] == behavior["namedResult"] == "Europe/Paris"
+    else:
+        assert behavior["namedKey"] is None and behavior["namedResult"] == "+02:00"
+    checks = {"behavior": behavior, "testSuites": {}, "executionModes": {}}
+    for name, flag in [("pure-python", "0"), ("rust-extension", "1")]:
+        label = "fixture-" + version + "-" + name
+        checks["executionModes"][name] = select_mode(label, flag)
+        full = OUT / (label + ".xml")
+        run(label, [str(python), "-B", "-m", "pytest", "tests", "-q", "--benchmark-disable",
+                    "--junitxml=" + str(full)], cwd=SRC, timeout=360)
+        value = junit(full)
+        assert value["tests"] > 1800 and value["failures"] == value["errors"] == 0
+        checks["testSuites"][name] = value
+    report["fixtureFix"]["versions"][version] = checks
+    save()
+run("restore-master-test", ["git", "-C", str(SRC), "checkout", "--", "tests/test_main.py"])
+run("restore-final-pr-head", ["git", "-C", str(SRC), "checkout", "--detach", HEAD])
+run("final-source-unchanged", ["git", "-C", str(SRC), "diff", "--exit-code"])
 report["allChecksPassed"] = True
 report["scope"] = (
-    "Exact PR head, editable build including Rust extension; all tests in pure-Python and extension modes, "
-    "with benchmark timing disabled. "
+    "Exact PR head, editable build including Rust extension; full tests in both execution modes with "
+    "the lockfile's dateutil 2.9.0.post0. Separate generic-tzinfo fixture fix on unchanged master "
+    "validated against dateutil 2.9.0.post0 and 3.0.0 in both modes. The original master test's "
+    "dateutil 3 failure is an asserted negative control. Benchmark timing disabled. "
     "Native Windows checks read real registry handles and substitute EnumValue results only in process; "
     "no registry writes or OS timezone changes. Pinned tzdata 2026.5 and CLDR blob."
 )
