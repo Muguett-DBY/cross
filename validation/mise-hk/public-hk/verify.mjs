@@ -74,7 +74,8 @@ const actual = Toml.parse(actualBytes);
 const artifacts = result?.filter((item) => item.artifactError) ?? [];
 let matchesReference = false;
 try {
-  assert.deepEqual(actual.tools.hk, expectedEntries);
+  // Compare TOML values: structuredClone replaces null object prototypes.
+  assert.deepEqual(JSON.parse(JSON.stringify(actual.tools.hk)), expectedEntries);
   matchesReference = true;
 } catch (error) {
   assert.equal(error.code, 'ERR_ASSERTION');
@@ -98,6 +99,8 @@ const receipt = {
   platformCount: Object.keys(platforms).length,
   matchesIndependentExactVersionReference: matchesReference,
   referenceBindingNormalizedToConfiguredSelector: true,
+  actualEntries: actual.tools.hk,
+  expectedEntries,
   artifactErrors: artifacts,
   resultFiles: result?.filter((item) => item.file).map(({ file }) => ({
     type: file.type, path: file.path, sha256: file.contents ? digest(file.contents) : null,
