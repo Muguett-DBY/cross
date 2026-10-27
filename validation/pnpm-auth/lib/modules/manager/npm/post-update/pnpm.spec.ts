@@ -75,7 +75,7 @@ describe('modules/manager/npm/post-update/pnpm', () => {
       expect(result.lockFile).toBe('package-lock-contents');
       expect(execSnapshots).toMatchObject([
         {
-          cmd: 'pnpm install --lockfile-only --ignore-scripts --ignore-pnpmfile',
+          cmd: 'pnpm install --lockfile-only --ignore-scripts --ignore-pnpmfile --no-frozen-lockfile',
           options: {
             env: {
               GIT_CONFIG_COUNT: '3',
@@ -107,7 +107,12 @@ describe('modules/manager/npm/post-update/pnpm', () => {
       token: 'test-token',
     });
 
-    const result = await pnpmHelper.generateLockFile('some-dir', {}, config, upgrades);
+    const result = await pnpmHelper.generateLockFile(
+      'some-dir',
+      {},
+      config,
+      upgrades,
+    );
 
     expect(result.lockFile).toBe('package-lock-contents');
     expect(execSnapshots).toMatchObject([
@@ -117,11 +122,14 @@ describe('modules/manager/npm/post-update/pnpm', () => {
             GIT_CONFIG_COUNT: '4',
             GIT_CONFIG_KEY_0: 'core.sshCommand',
             GIT_CONFIG_VALUE_0: 'ssh -o BatchMode=yes',
-            GIT_CONFIG_KEY_1: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+            GIT_CONFIG_KEY_1:
+              'url.https://x-access-token:test-token@github.com/.insteadOf',
             GIT_CONFIG_VALUE_1: 'ssh://git@github.com/',
-            GIT_CONFIG_KEY_2: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+            GIT_CONFIG_KEY_2:
+              'url.https://x-access-token:test-token@github.com/.insteadOf',
             GIT_CONFIG_VALUE_2: 'git@github.com:',
-            GIT_CONFIG_KEY_3: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+            GIT_CONFIG_KEY_3:
+              'url.https://x-access-token:test-token@github.com/.insteadOf',
             GIT_CONFIG_VALUE_3: 'https://github.com/',
           },
         },
@@ -145,19 +153,29 @@ describe('modules/manager/npm/post-update/pnpm', () => {
       token: 'test-token',
     });
 
-    const result = await pnpmHelper.generateLockFile('some-dir', {}, config, upgrades);
+    const result = await pnpmHelper.generateLockFile(
+      'some-dir',
+      {},
+      { ...config, constraints: { pnpm: '6.0.0' } },
+      upgrades,
+    );
 
     expect(result.lockFile).toBe('package-lock-contents');
-    const containerExec = execSnapshots.find(({ cmd }) => cmd.startsWith('docker run'));
+    const containerExec = execSnapshots.find(({ cmd }) =>
+      cmd.startsWith('docker run'),
+    );
     expect(containerExec).toMatchObject({
       options: {
         env: {
           GIT_CONFIG_COUNT: '3',
-          GIT_CONFIG_KEY_0: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+          GIT_CONFIG_KEY_0:
+            'url.https://x-access-token:test-token@github.com/.insteadOf',
           GIT_CONFIG_VALUE_0: 'ssh://git@github.com/',
-          GIT_CONFIG_KEY_1: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+          GIT_CONFIG_KEY_1:
+            'url.https://x-access-token:test-token@github.com/.insteadOf',
           GIT_CONFIG_VALUE_1: 'git@github.com:',
-          GIT_CONFIG_KEY_2: 'url.https://x-access-token:test-token@github.com/.insteadOf',
+          GIT_CONFIG_KEY_2:
+            'url.https://x-access-token:test-token@github.com/.insteadOf',
           GIT_CONFIG_VALUE_2: 'https://github.com/',
         },
       },

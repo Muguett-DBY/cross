@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 assert sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true'
 workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
@@ -47,7 +48,17 @@ for path, content in formatted.items():
 fixed_log = (reports / 'fixed-scoped-check.log').read_text(encoding='utf-8')
 strip_ansi = lambda text: re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
 fixed_text = strip_ansi(fixed_log)
-passed = re.search(r'Tests\s+(\d+) passed', fixed_text)
+
+
+def test_results(text):
+    start = text.index('<?xml')
+    end = text.index('</testsuites>', start) + len('</testsuites>')
+    return ET.fromstring(text[start:end])
+
+
+fixed_results = test_results(fixed_text)
+passed = (int(fixed_results.attrib['tests']) if int(fixed_results.attrib['failures']) == 0
+          and int(fixed_results.attrib['errors']) == 0 else None)
 
 try:
     (source / paths[0]).write_bytes(original_production)
@@ -57,13 +68,17 @@ try:
 finally:
     (source / paths[0]).write_bytes(formatted[paths[0]])
 
-failures = re.search(r'Tests\s+(\d+) failed', baseline_text)
+baseline_results = test_results(baseline_text)
 expected_failures = ['passes Git authentication for api.github.com to pnpm',
                      'passes Git authentication for https://github.com/org/private.git to pnpm',
                      'appends authentication without replacing approved Git configuration',
                      'passes Git authentication into the pnpm Docker container']
-causal = baseline_status != 0 and failures is not None and int(failures[1]) == 4
-causal = causal and all(name in baseline_text for name in expected_failures)
+failed_names = [test.attrib['name'].replace("'", '') for test in baseline_results.iter('testcase')
+                if test.find('failure') is not None or test.find('error') is not None]
+causal = baseline_status != 0 and int(baseline_results.attrib['failures']) == 4
+causal = causal and int(baseline_results.attrib['errors']) == 0
+causal = causal and len(failed_names) == 4 and all(
+    any(expected in name for name in failed_names) for expected in expected_failures)
 coverage_file = reports / 'fixed-coverage/coverage-final.json'
 coverage = None
 if coverage_file.exists():
@@ -88,9 +103,10 @@ result = {
     'node': subprocess.check_output(['node', '--version'], text=True).strip(),
     'pnpm': subprocess.check_output(['pnpm', '--version'], text=True).strip(),
     'requiredScopedCheckPassed': fixed_status == 0,
-    'scopedTestsPassed': int(passed[1]) if passed else None,
+    'scopedTestsPassed': passed,
     'baselineCountercontrolPassed': causal,
     'baselineExpectedRegressionFailures': 4 if causal else None,
+    'baselineFailedTestNames': failed_names,
     'moduleCoverage': coverage,
     'verifiedSourceSha256': {path: hashlib.sha256(content).hexdigest() for path, content in formatted.items()},
     'sourceChangedOnlyExpectedPaths': sorted(changed) == sorted(paths),
