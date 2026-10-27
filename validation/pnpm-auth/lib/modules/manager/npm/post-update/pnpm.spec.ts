@@ -3,6 +3,7 @@ import { envMock, mockExecAll } from '~test/exec-util.ts';
 import { Fixtures } from '~test/fixtures.ts';
 import { env, fs, partial } from '~test/util.ts';
 import { GlobalConfig } from '../../../../config/global.ts';
+import { resetPrefetchedImages } from '../../../../util/exec/docker/index.ts';
 import * as hostRules from '../../../../util/host-rules.ts';
 import type { PostUpdateConfig, Upgrade } from '../../types.ts';
 import { getNodeToolConstraint } from './node-version.ts';
@@ -41,6 +42,7 @@ describe('modules/manager/npm/post-update/pnpm', () => {
     env.getChildProcessEnv.mockReturnValue(envMock.basic);
     GlobalConfig.set({ localDir: '', binarySource: 'global' });
     hostRules.clear();
+    resetPrefetchedImages();
     vi.mocked(getNodeToolConstraint).mockResolvedValueOnce({
       toolName: 'node',
       constraint: '16.16.0',

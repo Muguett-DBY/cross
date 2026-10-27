@@ -22,14 +22,27 @@ paths = ['lib/modules/manager/npm/post-update/pnpm.ts',
          'lib/modules/manager/npm/post-update/pnpm.spec.ts']
 assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip() == base
 original_production = (source / paths[0]).read_bytes()
+reporter_config = source / 'vitest.config.mts'
+original_reporter_config = reporter_config.read_bytes()
+assert original_reporter_config.decode().count('        reporters,') == 1
 env = dict(os.environ, HUSKY='0', FORCE_COLOR='0', CI='true')
 
 
 def run(args, label, timeout=900):
     started = time.monotonic()
-    with (reports / (label + '.log')).open('w', encoding='utf-8') as log:
-        result = subprocess.run(args, cwd=source, env=env, stdout=log,
-                                stderr=subprocess.STDOUT, timeout=timeout)
+    report_only = label in ['fixed-scoped-check', 'baseline-countercontrol']
+    if report_only:
+        # The check wrapper prints only failed subprocess output. Direct the
+        # existing JUnit reporter to a file without changing tests or selection.
+        destination = json.dumps({'junit': str(reports / (label + '.xml'))})
+        reporter_config.write_text(original_reporter_config.decode().replace(
+            '        reporters,', '        reporters,\n        outputFile: ' + destination + ','))
+    try:
+        with (reports / (label + '.log')).open('w', encoding='utf-8') as log:
+            result = subprocess.run(args, cwd=source, env=env, stdout=log,
+                                    stderr=subprocess.STDOUT, timeout=timeout)
+    finally:
+        reporter_config.write_bytes(original_reporter_config)
     print(json.dumps({'phase': label, 'exitCode': result.returncode,
                       'durationSeconds': round(time.monotonic() - started, 2)}), flush=True)
     return result.returncode
@@ -50,13 +63,11 @@ strip_ansi = lambda text: re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
 fixed_text = strip_ansi(fixed_log)
 
 
-def test_results(text):
-    start = text.index('<?xml')
-    end = text.index('</testsuites>', start) + len('</testsuites>')
-    return ET.fromstring(text[start:end])
+def test_results(label):
+    return ET.parse(reports / (label + '.xml')).getroot()
 
 
-fixed_results = test_results(fixed_text)
+fixed_results = test_results('fixed-scoped-check')
 passed = (int(fixed_results.attrib['tests']) if int(fixed_results.attrib['failures']) == 0
           and int(fixed_results.attrib['errors']) == 0 else None)
 
@@ -68,7 +79,7 @@ try:
 finally:
     (source / paths[0]).write_bytes(formatted[paths[0]])
 
-baseline_results = test_results(baseline_text)
+baseline_results = test_results('baseline-countercontrol')
 expected_failures = ['passes Git authentication for api.github.com to pnpm',
                      'passes Git authentication for https://github.com/org/private.git to pnpm',
                      'appends authentication without replacing approved Git configuration',
@@ -110,6 +121,8 @@ result = {
     'moduleCoverage': coverage,
     'verifiedSourceSha256': {path: hashlib.sha256(content).hexdigest() for path, content in formatted.items()},
     'sourceChangedOnlyExpectedPaths': sorted(changed) == sorted(paths),
+    'junitReporterDestinationOnly': True,
+    'originalReporterConfigRestored': reporter_config.read_bytes() == original_reporter_config,
     'subprocessAndDockerExecutionMocked': True,
     'privateRepositoryUsed': False, 'fullProjectTypeCheckRun': False,
     'fullRenovateSuiteRun': False, 'userComputerPackagesInstalled': False,
